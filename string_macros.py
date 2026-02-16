@@ -22,6 +22,25 @@ def format_ms_precise(ms):
     seconds = total_sec % 60
     return f"{minutes}m {seconds}s"
 
+def format_ms_precise(ms):
+    """Format milliseconds as Xm Ys"""
+    total_sec = int(ms / 1000)
+    minutes   = total_sec // 60
+    seconds   = total_sec % 60
+    return f"{minutes}m {seconds}s"
+
+def get_file_duration_ms(filepath):
+    """Get file duration in milliseconds"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            events = json.load(f)
+        if not events:
+            return 0
+        times = [e.get('Time', 0) for e in events]
+        return max(times) - min(times)
+    except:
+        return 0
+
 def filter_problematic_keys(events: list) -> list:
     """
     CRITICAL: Filter out keys that could stop macro playback.
@@ -276,18 +295,6 @@ def scan_for_numbered_subfolders(base_path):
     
     return numbered_folders
 
-def get_file_duration_ms(filepath):
-    """Get file duration in milliseconds"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            events = json.load(f)
-        if not events:
-            return 0
-        times = [e.get('Time', 0) for e in events]
-        return max(times) - min(times)
-    except:
-        return 0
-
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -375,6 +382,10 @@ def main():
         folder_name = folder_data['name']
         subfolder_files = folder_data['subfolders']
         
+        # Extract folder number for version code (e.g. "47- Canifis" → 47)
+        folder_num_match = re.search(r'\d+', folder_name)
+        folder_number = int(folder_num_match.group()) if folder_num_match else 0
+        
         print(f"\n🔨 Processing: {folder_name}")
         
         tracker = CombinationTracker(subfolder_files, rng)
@@ -382,43 +393,114 @@ def main():
         out_folder = bundle_dir / folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
+        target_ms = args.target_minutes * 60000
+        
+        # Calculate total original files and duration for manifest header
+        total_original_files = sum(len(files) for files in subfolder_files.values())
+        # Estimate single stringed file duration using average combination
+        sample_combo = list(tracker.all_combinations[0]) if tracker.all_combinations else []
+        total_original_ms = sum(get_file_duration_ms(f) for f in sample_combo) * len(tracker.all_combinations)
+        
+        manifest_lines = [
+            f"MANIFEST FOR FOLDER: {folder_name}",
+            "=" * 40,
+            f"Script Version: {VERSION}",
+            f"Stringed Bundle: stringed_bundle_{args.bundle_id}",
+            f"Total Subfolders: {len(subfolder_files)}",
+            f"Total Combinations: {len(tracker.all_combinations)}",
+            " "
+        ]
+        
         # Generate versions
         for v_idx in range(1, args.versions + 1):
-            print(f"\n  Creating version {v_idx}/{args.versions}...")
+            v_letter = chr(64 + v_idx)
+            v_code   = f"{folder_number}_{v_letter}"
+            print(f"\n  Creating version {v_idx}/{args.versions} ({v_code})...")
             
-            # STRING: Combine subfolder files in order (seamless, no gaps)
-            stringed_events, combo_files = string_files_from_subfolders(
-                subfolder_files, tracker, rng
-            )
+            merged       = []
+            timeline     = 0
+            gap_total    = 0
+            combo_log    = []   # [(folder_num, filename), ...]
             
-            if not stringed_events:
-                print(f"    ⚠️ No events in stringed file, skipping...")
+            # Keep stringing combinations until we reach target duration
+            while timeline < target_ms:
+                stringed_events, combo_files_names = string_files_from_subfolders(
+                    subfolder_files, tracker, rng
+                )
+                if not stringed_events:
+                    break
+                
+                # Get the ordered folder numbers for this combination
+                folder_keys = sorted(subfolder_files.keys())
+                for fi, fname_part in enumerate(combo_files_names):
+                    combo_log.append((folder_keys[fi], fname_part))
+                
+                # Inter-string gap (500-3000ms) between each stringed block
+                if merged:
+                    gap = int(rng.uniform(500.123, 2999.987))
+                    
+                    # Cursor transition during gap
+                    last_cursor = next((e for e in reversed(merged) if 'X' in e and 'Y' in e), None)
+                    first_cursor = next((e for e in stringed_events if 'X' in e and 'Y' in e), None)
+                    if last_cursor and first_cursor:
+                        lx, ly = last_cursor['X'], last_cursor['Y']
+                        fx, fy = first_cursor['X'], first_cursor['Y']
+                        if (lx != fx) or (ly != fy):
+                            for rel_t, x, y in generate_human_path(lx, ly, fx, fy, gap, rng):
+                                if rel_t < gap:
+                                    merged.append({'Type': 'MouseMove', 'Time': timeline + rel_t, 'X': x, 'Y': y})
+                    
+                    timeline += gap
+                    gap_total += gap
+                
+                base_t = min(e['Time'] for e in stringed_events)
+                for e in stringed_events:
+                    ne = {**e}
+                    ne['Time'] = e['Time'] - base_t + timeline
+                    merged.append(ne)
+                
+                if merged:
+                    timeline = merged[-1]['Time']
+                
+                # Check if within 4 minutes of target - stop if adding more would overshoot
+                remaining = target_ms - timeline
+                next_combo = tracker.all_combinations[0] if tracker.current_pool else tracker.all_combinations[0]
+                next_dur   = sum(get_file_duration_ms(f) for f in next_combo)
+                if timeline >= target_ms - (4 * 60000) and next_dur > remaining + (4 * 60000):
+                    break
+            
+            if not merged:
+                print(f"    ⚠️ No events created, skipping...")
                 continue
             
-            print(f"    ✓ Stringed: {' + '.join(combo_files)}")
-            print(f"    Events: {len(stringed_events)}")
+            timeline = merged[-1]['Time']
+            total_minutes = int(timeline / 60000)
+            total_seconds = int((timeline % 60000) / 1000)
             
-            # TODO: Add merge features here
-            # - Mouse jitter
-            # - Intra-file pauses
-            # - Idle movements
-            # - Normal file pause
-            # For now: just save stringed file
-            
-            # Calculate duration
-            duration_ms = stringed_events[-1]['Time'] - stringed_events[0]['Time']
-            duration_min = int(duration_ms / 60000)
-            duration_sec = int((duration_ms % 60000) / 1000)
-            
-            # Save
-            v_letter = chr(64 + v_idx)
-            filename = f"{folder_name}_{v_letter}_{duration_min}m{duration_sec}s.json"
+            filename = f"{folder_number}_{v_letter}_{total_minutes}m{total_seconds}s.json"
             output_path = out_folder / filename
-            
             with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(stringed_events, f, indent=2)
+                json.dump(merged, f, indent=2)
             
-            print(f"    💾 Saved: {filename} ({duration_min}m {duration_sec}s)")
+            print(f"    💾 Saved: {filename} ({total_minutes}m {total_seconds}s, {len(combo_log)} parts)")
+            
+            # Manifest entry
+            manifest_lines += [
+                "=" * 40,
+                " ",
+                f"Version {folder_number}_{v_letter}_{total_minutes}m{total_seconds}s:",
+                f"FILE TYPE: Normal",
+                f"  Between strings pause: {format_ms_precise(gap_total)}",
+                ""
+            ]
+            for folder_num_log, file_name_log in combo_log:
+                manifest_lines.append(f"  F{folder_num_log}* {file_name_log}")
+            manifest_lines.append("")
+        
+        # Write manifest
+        manifest_path = out_folder / f"!_MANIFEST_{folder_number}_!.txt"
+        manifest_path.write_text("\n".join(manifest_lines), encoding="utf-8")
+        print(f"\n  📋 Manifest written: {manifest_path.name}")
     
     print("\n" + "="*70)
     print(f"✅ STRING MACROS COMPLETE - Bundle {args.bundle_id}")
