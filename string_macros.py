@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 string_macros.py - v3.0.0 - Full Anti-Detection Suite
-- Integrated all features from merge_macros v3.29.0
+- Complete anti-detection suite with all features
 - Mouse jitter (20-45% of movements)
 - Idle mouse movements (fills gaps >=5 seconds)  
 - Intra-part pauses (1-4 per part, 1000-2000ms)
