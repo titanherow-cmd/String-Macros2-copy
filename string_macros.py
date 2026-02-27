@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.1.0 - Full Anti-Detection Suite + Inefficient Type
+string_macros.py - v3.3.0 - Major Architecture Update
+- CHANGED: Features now applied AFTER complete folder cycles (not per file)
+- ADDED: "optional" folder support (38% chance to include)
+- FIXED: Manifest shows F#* prefix and cumulative timeline
+- FIXED: Smooth cursor transitions between all files (no teleporting)
 - Complete anti-detection suite with all features
 - Added Inefficient file type with massive pause (4-9 minutes)
 - Added "dont mess with me" folder support (unmodified files)
-- Fixed manifest format to match merge_macros exactly
 - Non-JSON files copied with @ prefix
-- Mouse jitter (20-45% of movements)
-- Idle mouse movements (fills gaps >=5 seconds)  
-- Intra-part pauses (1-4 per part, 1000-2000ms)
-- Inter-part pauses (500-5000ms × multiplier)
-- Rapid click protection (double-click/spam detection)
-- File types: Raw (3 versions) + Normal (6 versions) = 9 total
 - D_ removal from folder names
 - Chat queue ensures unique inserts (no repeats until all used)
 """
@@ -19,7 +16,7 @@ string_macros.py - v3.1.0 - Full Anti-Detection Suite + Inefficient Type
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.2.0"
+VERSION = "v3.3.0"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -724,132 +721,154 @@ def insert_massive_pause(events: list, rng: random.Random) -> tuple:
 # STRING PARTS WITH ANTI-DETECTION
 # ============================================================================
 
-def string_parts(subfolder_files, combination, rng, dmwm_file_set=set(), is_raw=False, multiplier=1):
+def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
     """
-    String together parts from numbered subfolders with full anti-detection.
-    Returns file names with end times for manifest.
+    String one complete cycle (F1 → F2 → F3 → ...) into a single unit.
+    Returns raw events WITHOUT anti-detection features.
+    Features will be applied to the ENTIRE cycle after.
+    
+    Args:
+        subfolder_files: Dict of {folder_num: {'files': [...], 'is_optional': bool}}
+        combination: List of (folder_num, file_path) tuples
+        rng: Random generator
+        dmwm_file_set: Set of unmodified file paths
+    
+    Returns:
+        (cycle_events, file_info_list, has_dmwm)
+        file_info_list: [(folder_num, filename, is_dmwm), ...]
+        has_dmwm: True if any dmwm file in cycle
     """
-    stringed_events = []
+    cycle_events = []
+    file_info_list = []
     timeline = 0
-    file_names_with_times = []
+    has_dmwm = False
     
-    # Statistics tracking
-    stats = {
-        'total_jitter_count': 0,
-        'total_moves': 0,
-        'jitter_percentage': 0.0,
-        'total_intra_pauses': 0,
-        'total_inter_pauses': 0,
-        'total_idle_movements': 0,
-        'movement_percentage': rng.uniform(0.40, 0.50)
-    }
-    
-    for idx, (folder_num, file_path) in enumerate(combination):
-        # Load events from this part
+    for folder_num, file_path in combination:
+        # Load events
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 events = json.load(f)
-        except Exception as e:
+        except Exception:
             continue
         
         if not events:
             continue
         
-        # Check if this is a dmwm file
-        is_dmwm_file = file_path in dmwm_file_set
-        
-        # CRITICAL: Filter problematic keys
+        # Filter problematic keys only
         events = filter_problematic_keys(events)
         if not events:
             continue
         
-        # STEP 1: Add pre-move jitter (skip for dmwm files)
-        if not is_dmwm_file:
-            events_with_jitter, jitter_count, click_count, jitter_pct = add_pre_click_jitter(events, rng)
-        else:
-            events_with_jitter = events
-        stats['total_jitter_count'] += jitter_count
-        stats['total_moves'] += click_count
-        stats['jitter_percentage'] = jitter_pct
-        
-        # STEP 2: Detect rapid click sequences
-        protected_ranges = detect_rapid_click_sequences(events_with_jitter)
-        
-        # STEP 3: Add intra-file pauses (skip for RAW and dmwm)
-        if not is_raw and not is_dmwm_file:
-            events_with_pauses, intra_pause_time = insert_intra_file_pauses(
-                events_with_jitter, rng, protected_ranges
-            )
-            stats['total_intra_pauses'] += intra_pause_time
-        else:
-            events_with_pauses = events_with_jitter
-        
-        # STEP 4: Add idle mouse movements (skip for dmwm)
-        if not is_dmwm_file:
-            events_with_movements, idle_time = insert_idle_mouse_movements(
-                events_with_pauses, rng, stats['movement_percentage']
-            )
-            stats['total_idle_movements'] += idle_time
-        else:
-            events_with_movements = events_with_pauses
+        # Check if dmwm file
+        is_dmwm = file_path in dmwm_file_set
+        if is_dmwm:
+            has_dmwm = True
         
         # Normalize timing
-        base_time = min(e.get('Time', 0) for e in events_with_movements)
+        base_time = min(e.get('Time', 0) for e in events)
         
-        # STEP 5: Inter-file pause (between files)
-        if idx > 0:
-            inter_pause = int(rng.uniform(500.123, 4999.987) * multiplier)
-            stats['total_inter_pauses'] += inter_pause
+        # Add smooth cursor transition if not first file
+        if cycle_events:
+            # Get last position
+            last_x, last_y = None, None
+            for e in reversed(cycle_events):
+                if e.get('X') is not None and e.get('Y') is not None:
+                    last_x, last_y = int(e['X']), int(e['Y'])
+                    break
             
-            # Add cursor transition during inter-pause
-            if stringed_events and events_with_movements:
-                last_cursor_event = None
-                for e in reversed(stringed_events):
-                    if e.get('X') is not None and e.get('Y') is not None:
-                        last_cursor_event = e
-                        break
-                
-                first_cursor_event = None
-                for e in events_with_movements:
-                    if e.get('X') is not None and e.get('Y') is not None:
-                        first_cursor_event = e
-                        break
-                
-                if last_cursor_event and first_cursor_event:
-                    last_x, last_y = int(last_cursor_event['X']), int(last_cursor_event['Y'])
-                    first_x, first_y = int(first_cursor_event['X']), int(first_cursor_event['Y'])
-                    
-                    if (last_x != first_x) or (last_y != first_y):
-                        transition_path = generate_human_path(
-                            last_x, last_y, first_x, first_y,
-                            inter_pause, rng
-                        )
-                        
-                        for rel_time, x, y in transition_path[:-1]:
-                            if rel_time < inter_pause:
-                                stringed_events.append({
-                                    'Type': 'MouseMove',
-                                    'Time': timeline + rel_time,
-                                    'X': x,
-                                    'Y': y
-                                })
+            # Get first position of current file
+            first_x, first_y = None, None
+            for e in events:
+                if e.get('X') is not None and e.get('Y') is not None:
+                    first_x, first_y = int(e['X']), int(e['Y'])
+                    break
             
-            timeline += inter_pause
+            # Add smooth transition (no pause, just movement)
+            if last_x and first_x and (last_x != first_x or last_y != first_y):
+                transition_duration = rng.randint(100, 300)
+                transition_path = generate_human_path(
+                    last_x, last_y, first_x, first_y,
+                    transition_duration, rng
+                )
+                
+                for rel_time, x, y in transition_path[:-1]:
+                    cycle_events.append({
+                        'Type': 'MouseMove',
+                        'Time': timeline + rel_time,
+                        'X': x,
+                        'Y': y
+                    })
+                
+                timeline += transition_duration
         
-        # STEP 6: Add events from current file
-        for event in events_with_movements:
+        # Add events from current file
+        for event in events:
             new_event = {**event}
             new_event['Time'] = event['Time'] - base_time + timeline
-            stringed_events.append(new_event)
+            cycle_events.append(new_event)
         
         # Update timeline
-        if stringed_events:
-            timeline = stringed_events[-1]['Time']
-            # Mark dmwm files in manifest
-            file_name = f"[UNMODIFIED] {file_path.name}" if is_dmwm_file else file_path.name
-            file_names_with_times.append(f"{file_name} (Ends at {format_ms_precise(timeline)})")
+        if cycle_events:
+            timeline = cycle_events[-1]['Time']
+        
+        # Track file info for manifest
+        file_info_list.append((folder_num, file_path.name, is_dmwm))
     
-    return stringed_events, file_names_with_times, stats
+    return cycle_events, file_info_list, has_dmwm
+
+
+def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm):
+    """
+    Apply anti-detection features to a complete cycle.
+    This is where jitter, pauses, idle movements are added to the ENTIRE cycle.
+    
+    Args:
+        cycle_events: Events from one complete cycle
+        rng: Random generator
+        is_raw: If True, skip intra-cycle pauses
+        has_dmwm: If True, skip ALL modifications (cycle contains dmwm file)
+    
+    Returns:
+        (processed_events, stats)
+    """
+    stats = {
+        'jitter_count': 0,
+        'total_moves': 0,
+        'jitter_percentage': 0.0,
+        'intra_pauses': 0,
+        'idle_movements': 0
+    }
+    
+    if has_dmwm:
+        # Cycle contains dmwm file - no modifications
+        return cycle_events, stats
+    
+    # Step 1: Jitter to entire cycle
+    events_with_jitter, jitter_count, move_count, jitter_pct = add_pre_click_jitter(cycle_events, rng)
+    stats['jitter_count'] = jitter_count
+    stats['total_moves'] = move_count
+    stats['jitter_percentage'] = jitter_pct
+    
+    # Step 2: Rapid click detection
+    protected_ranges = detect_rapid_click_sequences(events_with_jitter)
+    
+    # Step 3: Intra-cycle pauses (skip for raw)
+    if not is_raw:
+        events_with_pauses, pause_time = insert_intra_file_pauses(
+            events_with_jitter, rng, protected_ranges
+        )
+        stats['intra_pauses'] = pause_time
+    else:
+        events_with_pauses = events_with_jitter
+    
+    # Step 4: Idle movements
+    movement_pct = rng.uniform(0.40, 0.50)
+    events_with_idle, idle_time = insert_idle_mouse_movements(
+        events_with_pauses, rng, movement_pct
+    )
+    stats['idle_movements'] = idle_time
+    
+    return events_with_idle, stats
 
 
 
@@ -860,13 +879,13 @@ def string_parts(subfolder_files, combination, rng, dmwm_file_set=set(), is_raw=
 def scan_for_numbered_subfolders(base_path):
     """
     Scans folder for subfolders with numbers in their names.
-    Also checks for "dont mess with me" subfolder for unmodified files.
+    Also checks for "dont mess with me" subfolder and "optional" folders.
     
-    Accepts: "1", "part1", "step2", "3-action", etc.
+    Accepts: "1", "part1", "step2", "3-action", "3 optional- walk", etc.
     Returns tuple: (numbered_folders_dict, dmwm_file_set, non_json_files_list)
     
-    numbered_folders: {extracted_number: [list of .json files]}
-    dmwm_file_set: set of files from "dont mess with me" (added to regular pool)
+    numbered_folders: {num: {'files': [...], 'is_optional': bool}}
+    dmwm_file_set: set of files from "dont mess with me"
     non_json_files: [list of non-JSON files to copy]
     """
     base = Path(base_path)
@@ -894,8 +913,15 @@ def scan_for_numbered_subfolders(base_path):
         if match:
             folder_num = int(match.group())
             json_files = sorted(item.glob("*.json"))
+            
+            # Check if folder is "optional" (38% chance to include)
+            is_optional = 'optional' in item.name.lower()
+            
             if json_files:
-                numbered_folders[folder_num] = json_files
+                numbered_folders[folder_num] = {
+                    'files': json_files,
+                    'is_optional': is_optional
+                }
                 
             # Also collect non-JSON files from numbered folders
             for file in item.iterdir():
@@ -916,20 +942,23 @@ class CombinationTracker:
     """
     Tracks which file combinations have been used.
     Ensures no repeats until ALL combinations exhausted.
+    Handles optional folders (38% chance to include).
     """
     def __init__(self, subfolder_files, rng):
         self.subfolder_files = subfolder_files
         self.rng = rng
         self.used_combinations = set()
         
-        # Calculate total possible combinations
+        # Calculate total possible combinations (simplified - doesn't account for optional)
         self.total_combinations = 1
-        for files in subfolder_files.values():
+        for folder_data in subfolder_files.values():
+            files = folder_data['files']
             self.total_combinations *= len(files)
     
     def get_next_combination(self):
         """
         Get next unused combination.
+        Handles optional folders with 38% inclusion rate.
         Returns: List of (folder_num, file_path) tuples in order.
         """
         if len(self.used_combinations) >= self.total_combinations:
@@ -937,17 +966,31 @@ class CombinationTracker:
             self.used_combinations.clear()
         
         # Try to find unused combination
-        max_attempts = self.total_combinations * 2
+        max_attempts = min(self.total_combinations * 2, 1000)
         for _ in range(max_attempts):
             # Pick one random file from each subfolder
             combination = []
             for folder_num in sorted(self.subfolder_files.keys()):
-                files = self.subfolder_files[folder_num]
-                chosen_file = self.rng.choice(files)
-                combination.append((folder_num, chosen_file))
+                folder_data = self.subfolder_files[folder_num]
+                
+                # Check if optional folder
+                if folder_data.get('is_optional', False):
+                    # 38% chance to include
+                    if self.rng.random() >= 0.38:
+                        continue  # Skip this folder
+                
+                # Pick random file from this folder
+                files = folder_data['files']
+                if files:
+                    chosen_file = self.rng.choice(files)
+                    combination.append((folder_num, chosen_file))
+            
+            # Must have at least one file
+            if not combination:
+                continue
             
             # Create signature for this combination
-            signature = tuple(f.name for _, f in combination)
+            signature = tuple((fn, f.name) for fn, f in combination)
             
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)
@@ -956,10 +999,19 @@ class CombinationTracker:
         # Fallback: return any combination
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
-            files = self.subfolder_files[folder_num]
-            chosen_file = self.rng.choice(files)
-            combination.append((folder_num, chosen_file))
-        return combination
+            folder_data = self.subfolder_files[folder_num]
+            
+            # Optional check
+            if folder_data.get('is_optional', False):
+                if self.rng.random() >= 0.38:
+                    continue
+            
+            files = folder_data['files']
+            if files:
+                chosen_file = self.rng.choice(files)
+                combination.append((folder_num, chosen_file))
+        
+        return combination if combination else None
 
 # ============================================================================
 # MAIN FUNCTION
@@ -1165,9 +1217,9 @@ def main():
             else:  # normal
                 mult = rng.choices([1, 2], weights=[62.5, 37.5], k=1)[0]
             
-            # String files until target reached
+            # Build cycles until target reached
             stringed_events = []
-            all_file_names = []
+            all_file_info_with_times = []  # List of (folder_num, filename, is_dmwm, end_time) tuples
             total_intra = 0
             total_inter = 0
             total_idle = 0
@@ -1177,41 +1229,83 @@ def main():
             
             while True:
                 combo = tracker.get_next_combination()
+                if not combo:
+                    break
                 
-                # String normal combination
-                events, file_names, stats = string_parts(
-                    subfolder_files, combo, rng,
-                    dmwm_file_set=dmwm_file_set,
-                    is_raw=is_raw,
-                    multiplier=mult
+                # BUILD CYCLE (F1 → F2 → F3) WITHOUT features
+                cycle_events, file_info, has_dmwm = string_cycle(
+                    subfolder_files, combo, rng, dmwm_file_set
                 )
                 
-                if not events:
+                if not cycle_events:
                     break
+                
+                # APPLY FEATURES to ENTIRE cycle
+                cycle_with_features, stats = apply_cycle_features(
+                    cycle_events, rng, is_raw, has_dmwm
+                )
                 
                 # Check if adding would exceed target
                 current_duration = stringed_events[-1]['Time'] if stringed_events else 0
-                new_duration = events[-1]['Time'] if events else 0
-                potential_total = current_duration + new_duration
+                cycle_duration = cycle_with_features[-1]['Time'] if cycle_with_features else 0
                 
+                # Add inter-cycle pause
+                inter_cycle_pause = 0
+                if stringed_events:
+                    inter_cycle_pause = int(rng.uniform(500.123, 4999.987) * mult)
+                    total_inter += inter_cycle_pause
+                    
+                    # Add cursor transition during pause
+                    last_x, last_y = None, None
+                    for e in reversed(stringed_events):
+                        if e.get('X') is not None and e.get('Y') is not None:
+                            last_x, last_y = int(e['X']), int(e['Y'])
+                            break
+                    
+                    first_x, first_y = None, None
+                    for e in cycle_with_features:
+                        if e.get('X') is not None and e.get('Y') is not None:
+                            first_x, first_y = int(e['X']), int(e['Y'])
+                            break
+                    
+                    if last_x and first_x and (last_x != first_x or last_y != first_y):
+                        transition_path = generate_human_path(
+                            last_x, last_y, first_x, first_y,
+                            inter_cycle_pause, rng
+                        )
+                        
+                        for rel_time, x, y in transition_path[:-1]:
+                            if rel_time < inter_cycle_pause:
+                                stringed_events.append({
+                                    'Type': 'MouseMove',
+                                    'Time': current_duration + rel_time,
+                                    'X': x,
+                                    'Y': y
+                                })
+                
+                potential_total = current_duration + inter_cycle_pause + cycle_duration
                 margin = int(target_ms * 0.05)
                 if potential_total > target_ms + margin and stringed_events:
                     break
                 
-                # Add to string
-                offset = current_duration
-                for e in events:
+                # Add cycle to merged events
+                offset = current_duration + inter_cycle_pause
+                for e in cycle_with_features:
                     new_event = {**e}
                     new_event['Time'] = e['Time'] + offset
                     stringed_events.append(new_event)
                 
-                all_file_names.extend(file_names)
-                total_intra += stats['total_intra_pauses']
-                total_inter += stats['total_inter_pauses']
-                total_idle += stats['total_idle_movements']
+                # Track file info with cumulative timeline
+                final_time = stringed_events[-1]['Time'] if stringed_events else 0
+                for folder_num, filename, is_dmwm in file_info:
+                    all_file_info_with_times.append((folder_num, filename, is_dmwm, final_time))
+                
+                # Update stats
+                total_intra += stats['intra_pauses']
+                total_idle += stats['idle_movements']
                 jitter_pct = stats['jitter_percentage']
                 
-                if len(all_file_names) > 50:
+                if len(all_file_info_with_times) > 150:  # Safety limit
                     break
             
             if not stringed_events:
@@ -1296,9 +1390,10 @@ def main():
                     ""
                 ]
             
-            # Add file list
-            for file_name in all_file_names:
-                manifest_entry.append(f"  * {file_name}")
+            # Add file list with F#* prefix and cumulative timeline
+            for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
+                prefix = "[UNMODIFIED] " if is_dmwm else ""
+                manifest_entry.append(f"  F{folder_num}* {prefix}{filename} (Ends at {format_ms_precise(end_time)})")
             
             manifest_lines.extend(manifest_entry)
         
