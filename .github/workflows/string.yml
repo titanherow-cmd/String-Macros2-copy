@@ -6,7 +6,7 @@ on:
       enable_chat:
         description: 'Enable chat inserts'
         required: false
-        default: true
+        default: false
         type: boolean
       specific_folders_merge:
         description: 'Specif. folders merge'
@@ -16,7 +16,7 @@ on:
       versions:
         description: 'How many versions per group'
         required: true
-        default: '9'
+        default: '12'
       target_minutes:
         description: 'Target duration per stringed file'
         required: true
