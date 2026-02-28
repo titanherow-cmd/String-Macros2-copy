@@ -11,7 +11,7 @@ string_macros.py - v3.6.0 - Counter File Tracking
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.6.0"
+VERSION = "v3.6.1"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -969,6 +969,11 @@ class SimpleCombinationTracker:
         
         print(f"  📊 Counter: {self.counter} combinations generated so far")
         print(f"  💾 Counter file: {self.counter_file.resolve()}")
+        print(f"  🔍 Tracker initialized successfully!")
+        
+        # TEST: Try to save immediately
+        print(f"  🧪 Testing immediate save...")
+        self._test_immediate_save()
     
     def _load_counter(self):
         """Load counter from file"""
@@ -980,14 +985,53 @@ class SimpleCombinationTracker:
                 return 0
         return 0
     
+    def _test_immediate_save(self):
+        """Test if we can save right now"""
+        try:
+            print(f"    🧪 Writing test value 999...")
+            with open(self.counter_file, 'w') as f:
+                f.write("999")
+            print(f"    🧪 Reading back...")
+            with open(self.counter_file, 'r') as f:
+                test_val = f.read().strip()
+            print(f"    ✅ TEST SUCCESS! Read back: '{test_val}'")
+            # Restore original counter
+            with open(self.counter_file, 'w') as f:
+                f.write(str(self.counter))
+        except Exception as e:
+            print(f"    ❌ TEST FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def _save_counter(self):
         """Save counter to file"""
         try:
+            print(f"\n  🔥 === ATTEMPTING TO SAVE COUNTER ===")
+            print(f"  🔥 Counter value: {self.counter}")
+            print(f"  🔥 File path: {self.counter_file}")
+            print(f"  🔥 Absolute path: {self.counter_file.resolve()}")
+            print(f"  🔥 Parent dir: {self.counter_file.parent}")
+            print(f"  🔥 Parent exists: {self.counter_file.parent.exists()}")
+            
+            # Try to write
             with open(self.counter_file, 'w') as f:
                 f.write(str(self.counter))
-            print(f"  ✅ Counter saved: {self.counter}")
+            
+            print(f"  🔥 Write completed!")
+            
+            # Verify
+            if self.counter_file.exists():
+                with open(self.counter_file, 'r') as f:
+                    verify = f.read().strip()
+                print(f"  ✅ VERIFIED! File contains: '{verify}'")
+                print(f"  ✅ File size: {self.counter_file.stat().st_size} bytes")
+            else:
+                print(f"  ❌ FILE DOES NOT EXIST after write!")
+                
         except Exception as e:
-            print(f"  ⚠️  Could not save counter: {e}")
+            print(f"  ❌ SAVE FAILED: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_next_combination(self):
         """
