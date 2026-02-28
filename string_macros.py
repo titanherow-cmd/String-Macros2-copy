@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.6.0 - Counter File Tracking
-- CHANGED: Persistent tracking uses COUNTER FILES (like merge_macros)
-- FIXED: Chat inserts now properly show in manifest
+string_macros.py - v3.7.0 - Output Folder Tracking
+- CHANGED: Combination history stored IN OUTPUT FOLDER (not .github)
+- File: output/stringed_bundle_XXX/.combination_history.txt
+- Upload this file back to remember combinations across runs!
 - Buffer: 0.37-0.65 seconds between files
-- Optional folders: 38% chance to include
-- All anti-detection features working
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.6.1"
+VERSION = "v3.7.0"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -940,128 +939,143 @@ def scan_for_numbered_subfolders(base_path):
     return numbered_folders, dmwm_file_set, non_json_files
 
 # ============================================================================
-# SIMPLE COUNTER FILE TRACKER (Like merge_macros!)
+# OUTPUT FOLDER COMBINATION TRACKER
 # ============================================================================
 
-class SimpleCombinationTracker:
+class OutputFolderTracker:
     """
-    Simple counter-based tracking like merge_macros.
-    Uses a counter file: .github/string_counters/{folder_name}.txt
-    Just counts how many combinations have been used.
+    Stores combination history IN THE OUTPUT FOLDER.
+    File: output/stringed_bundle_XXX/.combination_history.txt
+    
+    Format:
+    [Folder Name]
+    combo1: F1=file1.json|F2=file2.json|F3=file3.json
+    combo2: F1=file2.json|F2=file3.json|F3=file1.json
+    ...
+    
+    You can upload this file back to remember history across runs!
     """
-    def __init__(self, subfolder_files, rng, folder_name):
+    def __init__(self, subfolder_files, rng, folder_name, output_dir):
         self.subfolder_files = subfolder_files
         self.rng = rng
         self.folder_name = folder_name
+        self.output_dir = output_dir
         
-        # Counter file location
-        self.counter_file = Path('.github/string_counters') / f"{folder_name}.txt"
-        self.counter_file.parent.mkdir(parents=True, exist_ok=True)
+        # History file in output folder
+        self.history_file = output_dir / ".combination_history.txt"
         
-        # Load counter
-        self.counter = self._load_counter()
+        # Load previous combinations for THIS folder
+        self.used_combinations = self._load_history()
         
-        # Calculate total possible combinations
+        # Calculate total possible
         self.total_combinations = 1
         for folder_data in subfolder_files.values():
             files = folder_data['files']
             self.total_combinations *= len(files)
         
-        print(f"  📊 Counter: {self.counter} combinations generated so far")
-        print(f"  💾 Counter file: {self.counter_file.resolve()}")
-        print(f"  🔍 Tracker initialized successfully!")
+        print(f"  📊 {len(self.used_combinations)} combinations already used")
+        print(f"  📁 History file: {self.history_file}")
+    
+    def _load_history(self):
+        """Load combination history from file"""
+        used = set()
+        if not self.history_file.exists():
+            return used
         
-        # TEST: Try to save immediately
-        print(f"  🧪 Testing immediate save...")
-        self._test_immediate_save()
-    
-    def _load_counter(self):
-        """Load counter from file"""
-        if self.counter_file.exists():
-            try:
-                with open(self.counter_file, 'r') as f:
-                    return int(f.read().strip())
-            except:
-                return 0
-        return 0
-    
-    def _test_immediate_save(self):
-        """Test if we can save right now"""
         try:
-            print(f"    🧪 Writing test value 999...")
-            with open(self.counter_file, 'w') as f:
-                f.write("999")
-            print(f"    🧪 Reading back...")
-            with open(self.counter_file, 'r') as f:
-                test_val = f.read().strip()
-            print(f"    ✅ TEST SUCCESS! Read back: '{test_val}'")
-            # Restore original counter
-            with open(self.counter_file, 'w') as f:
-                f.write(str(self.counter))
+            with open(self.history_file, 'r') as f:
+                current_folder = None
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Check if it's a folder header
+                    if line.startswith('[') and line.endswith(']'):
+                        current_folder = line[1:-1]
+                        continue
+                    
+                    # Check if it's a combo for our folder
+                    if current_folder == self.folder_name:
+                        if line.startswith('combo'):
+                            # Extract combo signature
+                            parts = line.split(': ', 1)
+                            if len(parts) == 2:
+                                used.add(parts[1])
+            
+            print(f"  ✅ Loaded {len(used)} previous combinations")
         except Exception as e:
-            print(f"    ❌ TEST FAILED: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"  ⚠️  Could not load history: {e}")
+        
+        return used
     
-    def _save_counter(self):
-        """Save counter to file"""
+    def _save_history(self, new_combo_sig):
+        """Append new combination to history file"""
         try:
-            print(f"\n  🔥 === ATTEMPTING TO SAVE COUNTER ===")
-            print(f"  🔥 Counter value: {self.counter}")
-            print(f"  🔥 File path: {self.counter_file}")
-            print(f"  🔥 Absolute path: {self.counter_file.resolve()}")
-            print(f"  🔥 Parent dir: {self.counter_file.parent}")
-            print(f"  🔥 Parent exists: {self.counter_file.parent.exists()}")
-            
-            # Try to write
-            with open(self.counter_file, 'w') as f:
-                f.write(str(self.counter))
-            
-            print(f"  🔥 Write completed!")
-            
-            # Verify
-            if self.counter_file.exists():
-                with open(self.counter_file, 'r') as f:
-                    verify = f.read().strip()
-                print(f"  ✅ VERIFIED! File contains: '{verify}'")
-                print(f"  ✅ File size: {self.counter_file.stat().st_size} bytes")
-            else:
-                print(f"  ❌ FILE DOES NOT EXIST after write!")
+            # Append mode - adds to existing file
+            with open(self.history_file, 'a') as f:
+                # Add folder header if this is first combo for this folder
+                if len(self.used_combinations) == 1:  # Just added first one
+                    f.write(f"\n[{self.folder_name}]\n")
                 
+                # Write combination
+                combo_num = len(self.used_combinations)
+                f.write(f"combo{combo_num}: {new_combo_sig}\n")
+            
+            print(f"  ✅ Saved combination #{len(self.used_combinations)}")
         except Exception as e:
-            print(f"  ❌ SAVE FAILED: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"  ⚠️  Could not save: {e}")
     
     def get_next_combination(self):
         """
-        Get next random combination.
-        Just picks randomly - no tracking of which specific ones used.
-        Simple and reliable!
+        Get next unused combination.
+        If all used, just picks randomly (may repeat).
         """
-        # Pick one random file from each subfolder
+        max_attempts = 500
+        
+        for _ in range(max_attempts):
+            # Pick random combination
+            combination = []
+            for folder_num in sorted(self.subfolder_files.keys()):
+                folder_data = self.subfolder_files[folder_num]
+                
+                # Optional folder check
+                if folder_data.get('is_optional', False):
+                    if self.rng.random() >= 0.38:
+                        continue
+                
+                # Pick random file
+                files = folder_data['files']
+                if files:
+                    chosen_file = self.rng.choice(files)
+                    combination.append((folder_num, chosen_file))
+            
+            if not combination:
+                continue
+            
+            # Create signature
+            signature = "|".join(f"F{fn}={f.name}" for fn, f in combination)
+            
+            # Check if unused
+            if signature not in self.used_combinations:
+                self.used_combinations.add(signature)
+                self._save_history(signature)
+                return combination
+        
+        # All used or max attempts reached - return random one
+        print(f"  ⚠️  Using random combination (may repeat)")
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
-            
-            # Check if optional folder
             if folder_data.get('is_optional', False):
-                # 38% chance to include
                 if self.rng.random() >= 0.38:
-                    continue  # Skip this folder
-            
-            # Pick random file from this folder
+                    continue
             files = folder_data['files']
             if files:
-                chosen_file = self.rng.choice(files)
-                combination.append((folder_num, chosen_file))
+                combination.append((folder_num, self.rng.choice(files)))
         
-        if combination:
-            self.counter += 1
-            self._save_counter()
-            return combination
-        
-        return None
+        return combination if combination else None
+
 
 
 # ============================================================================
@@ -1223,9 +1237,9 @@ def main():
             print("  ⚠️  No numbered subfolders to process")
             continue
         
-        # Use simple counter tracker (like merge_macros!)
-        tracker = SimpleCombinationTracker(
-            subfolder_files, rng, cleaned_folder_name
+        # Use output folder tracker (saves in output bundle!)
+        tracker = OutputFolderTracker(
+            subfolder_files, rng, cleaned_folder_name, bundle_dir
         )
         target_ms = args.target_minutes * 60000
         
