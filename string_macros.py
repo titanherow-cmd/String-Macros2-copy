@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.7.4 - Click Fix + Auto-Save History
-- FIXED: Click events converted to LeftDown+LeftUp pairs (prevents clamp)
-- FIXED: Events sorted by Time after all modifications (prevents time gaps)
-- ADDED: History auto-saves to input_macros after each run (optional)
+string_macros.py - v3.8.0 - Pre-File Pause Fix + Simple History
+- CHANGED: 1-2 second pause BEFORE each file (replaces inter-file gap)
+- CHANGED: Simple persistent history like bundle counter (one file, always updates)
+- FIXED: Pause happens BEFORE cursor transition (prevents drag after click)
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.7.4"
+VERSION = "v3.8.0"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -803,12 +803,14 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # Normalize timing
         base_time = min(e.get('Time', 0) for e in events)
         
-        # Add smooth cursor transition if not first file
+        # PRE-FILE PAUSE: 1-2 seconds BEFORE file plays
+        # This prevents drag issues when previous file ended with a click!
         if cycle_events:
-            # Add buffer between files (0.37-0.65 seconds, non-rounded)
-            buffer_ms = int(rng.uniform(370.123, 649.987))
-            timeline += buffer_ms
+            # Random pause: 1000-2000ms (highly varied)
+            pre_file_pause = int(rng.uniform(1000.0 + rng.random()*50, 2000.0 + rng.random()*50))
+            timeline += pre_file_pause
             
+            # NOW do cursor transition (AFTER pause, so click has time to release)
             # Get last position
             last_x, last_y = None, None
             for e in reversed(cycle_events):
@@ -823,24 +825,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
             
-            # Add smooth transition during buffer
+            # Transition duration: 200-400ms (shorter since we already paused)
+            transition_duration = int(rng.uniform(200, 400))
+            
+            # Add smooth transition AFTER the pause
             if last_x and first_x and (last_x != first_x or last_y != first_y):
                 transition_path = generate_human_path(
                     last_x, last_y, first_x, first_y,
-                    buffer_ms, rng
+                    transition_duration, rng
                 )
                 
-                # Include ALL transition points (don't skip last one)
+                # Add transition movements
                 for rel_time, x, y in transition_path:
                     cycle_events.append({
                         'Type': 'MouseMove',
-                        'Time': timeline - buffer_ms + rel_time,
+                        'Time': timeline + rel_time,
                         'X': x,
                         'Y': y
                     })
                 
-                # CRITICAL: Add one final MouseMove to EXACT start position
-                # This ensures cursor is at Point B before file starts
+                timeline += transition_duration
+                
+                # Final position to ensure exact placement
                 cycle_events.append({
                     'Type': 'MouseMove',
                     'Time': timeline,
@@ -981,170 +987,82 @@ def scan_for_numbered_subfolders(base_path):
     return numbered_folders, dmwm_file_set, non_json_files
 
 # ============================================================================
-# OUTPUT FOLDER COMBINATION TRACKER
+# SIMPLE PERSISTENT HISTORY (Like Bundle Counter!)
 # ============================================================================
 
-
-class OutputFolderTracker:
+class SimplePersistentTracker:
     """
-    Stores combination history IN THE OUTPUT FOLDER with CUMULATIVE tracking.
-    File: output/stringed_bundle_XXX/COMBINATION_HISTORY.txt (VISIBLE!)
+    Simple persistent history - ONE file that keeps growing!
+    File: .github/string_combination_history.txt
     
-    Format:
-    === TOTAL COMBINATIONS: 644 ===
-    
-    [Folder Name]
-    combo1: F1=file1.json|F2=file2.json|F3=file3.json
-    combo2: F1=file2.json|F2=file3.json|F3=file1.json
-    ...
-    
-    Each run ACCUMULATES all previous history + new combinations!
+    Just appends combinations like a log file.
+    YOU create the file once, code just writes to it!
     """
-    def __init__(self, subfolder_files, rng, folder_name, output_dir, input_dir, bundle_id):
+    def __init__(self, subfolder_files, rng, folder_name):
         self.subfolder_files = subfolder_files
         self.rng = rng
         self.folder_name = folder_name
-        self.output_dir = output_dir
-        self.input_dir = input_dir
-        self.bundle_id = bundle_id
         
-        # History file in output folder with NUMBERED filename!
-        self.history_file = output_dir / f"COMBINATION_HISTORY_{bundle_id}.txt"
+        # ONE persistent file (you create it once in .github/)
+        self.history_file = Path('.github/string_combination_history.txt')
         
-        # Load ALL previous history (from input_macros)
-        self.all_history = self._load_all_history()
-        
-        # Extract combinations for THIS folder
-        self.used_combinations = self.all_history.get(self.folder_name, set())
-        
-        # Calculate total possible
-        self.total_combinations = 1
-        for folder_data in subfolder_files.values():
-            files = folder_data['files']
-            self.total_combinations *= len(files)
+        # Load previous combinations for THIS folder only
+        self.used_combinations = self._load_history()
         
         print(f"  📊 {len(self.used_combinations)} combinations already used for this folder")
         print(f"  📁 History file: {self.history_file}")
-        
-        # Track new combinations added this run
-        self.new_combinations = []
     
-    def _load_all_history(self):
-        """
-        Load ALL history from input_macros.
-        Looks for COMBINATION_HISTORY_*.txt files and loads the LATEST one!
-        Returns dict: {folder_name: set(combinations)}
-        """
-        all_history = {}
+    def _load_history(self):
+        """Load combinations for THIS folder from persistent file"""
+        used = set()
         
-        # Find all history files in input_macros
-        history_files = list(self.input_dir.glob("COMBINATION_HISTORY*.txt"))
-        
-        if not history_files:
-            print(f"  📝 No previous history found (starting fresh)")
-            return all_history
-        
-        # Sort by bundle number (extract number from filename)
-        def extract_bundle_num(filepath):
-            # COMBINATION_HISTORY_123.txt → 123
-            name = filepath.stem
-            if '_' in name:
-                try:
-                    return int(name.split('_')[-1])
-                except:
-                    return 0
-            return 0
-        
-        history_files.sort(key=extract_bundle_num)
-        latest_file = history_files[-1]  # Get LATEST
-        
-        print(f"  📥 Loading history from: {latest_file.name}")
-        print(f"     ({len(history_files)} history files found, using latest)")
+        if not self.history_file.exists():
+            print(f"  📝 No history file found (create .github/string_combination_history.txt)")
+            return used
         
         try:
-            with open(latest_file, 'r') as f:
+            with open(self.history_file, 'r') as f:
                 current_folder = None
-                total_count = 0
-                
                 for line in f:
                     line = line.strip()
-                    
-                    # Skip empty lines
                     if not line:
                         continue
                     
-                    # Check for counter line
-                    if line.startswith('=== TOTAL COMBINATIONS:'):
-                        # Extract count
-                        parts = line.split(':')
-                        if len(parts) == 2:
-                            try:
-                                total_count = int(parts[1].split('=')[0].strip())
-                            except:
-                                pass
-                        continue
-                    
-                    # Check if it's a folder header
+                    # Folder header
                     if line.startswith('[') and line.endswith(']'):
                         current_folder = line[1:-1]
-                        if current_folder not in all_history:
-                            all_history[current_folder] = set()
                         continue
                     
-                    # Check if it's a combo line
-                    if current_folder and line.startswith('combo'):
-                        # Extract combo signature
-                        parts = line.split(': ', 1)
-                        if len(parts) == 2:
-                            all_history[current_folder].add(parts[1])
+                    # Combination for this folder
+                    if current_folder == self.folder_name:
+                        used.add(line)
             
-            # Count total combinations across all folders
-            total_loaded = sum(len(combos) for combos in all_history.values())
-            print(f"  ✅ Loaded {total_loaded} total combinations across {len(all_history)} folders")
-            
+            print(f"  ✅ Loaded {len(used)} previous combinations")
         except Exception as e:
-            print(f"  ⚠️  Could not load history: {e}")
+            print(f"  ⚠️  Error reading history: {e}")
         
-        return all_history
+        return used
     
-    def _save_all_history(self):
-        """
-        Save COMPLETE history for ALL folders to output file.
-        This ensures nothing is ever lost!
-        """
+    def _save_combination(self, combo_sig):
+        """Append new combination to persistent file"""
         try:
-            # Calculate total combinations across ALL folders
-            total_count = sum(len(combos) for combos in self.all_history.values())
+            # Create .github folder if needed
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(self.history_file, 'w') as f:
-                # Write counter at top
-                f.write(f"=== TOTAL COMBINATIONS: {total_count} ===\n\n")
+            # Append mode - just add to the end!
+            with open(self.history_file, 'a') as f:
+                # Add folder header if this is first combo for this folder
+                if len(self.used_combinations) == 1:
+                    f.write(f"\n[{self.folder_name}]\n")
                 
-                # Write all folders in alphabetical order
-                for folder_name in sorted(self.all_history.keys()):
-                    combos = self.all_history[folder_name]
-                    
-                    # Write folder header
-                    f.write(f"[{folder_name}]\n")
-                    
-                    # Write all combinations for this folder
-                    for i, combo_sig in enumerate(sorted(combos), 1):
-                        f.write(f"combo{i}: {combo_sig}\n")
-                    
-                    f.write("\n")  # Blank line between folders
-            
-            # Only print on last save (reduces console spam)
-            if len(self.new_combinations) % 12 == 0 or len(self.new_combinations) == 1:
-                print(f"  💾 Saved {len(self.new_combinations)} new combinations (Total: {total_count})")
+                # Just append the combination
+                f.write(f"{combo_sig}\n")
             
         except Exception as e:
             print(f"  ⚠️  Could not save: {e}")
     
     def get_next_combination(self):
-        """
-        Get next unused combination.
-        If all used, just picks randomly (may repeat).
-        """
+        """Get next unused combination"""
         max_attempts = 500
         
         for _ in range(max_attempts):
@@ -1167,28 +1085,16 @@ class OutputFolderTracker:
             if not combination:
                 continue
             
-            # Create signature for this combination
+            # Create signature
             signature = "|".join(f"F{fn}={f.name}" for fn, f in combination)
             
             # Check if unused
             if signature not in self.used_combinations:
-                # Add to current folder's set
                 self.used_combinations.add(signature)
-                
-                # Add to overall history dict
-                if self.folder_name not in self.all_history:
-                    self.all_history[self.folder_name] = set()
-                self.all_history[self.folder_name].add(signature)
-                
-                # Track new combination
-                self.new_combinations.append(signature)
-                
-                # Save complete history after each new combination
-                self._save_all_history()
-                
+                self._save_combination(signature)
                 return combination
         
-        # All used or max attempts reached - return random one
+        # Fallback: return random one
         print(f"  ⚠️  Using random combination (may repeat)")
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
@@ -1362,9 +1268,9 @@ def main():
             print("  ⚠️  No numbered subfolders to process")
             continue
         
-        # Use output folder tracker (saves in output bundle!)
-        tracker = OutputFolderTracker(
-            subfolder_files, rng, cleaned_folder_name, bundle_dir, search_base, args.bundle_id
+        # Use simple persistent tracker (one file, keeps growing!)
+        tracker = SimplePersistentTracker(
+            subfolder_files, rng, cleaned_folder_name
         )
         target_ms = args.target_minutes * 60000
         
@@ -1609,22 +1515,8 @@ def main():
     print("\n" + "="*70)
     print(f"✅ STRING MACROS COMPLETE - Bundle {args.bundle_id}")
     print(f"📦 Output: {bundle_dir}")
-    print("="*70)
-    
-    # Auto-copy history file to input_macros for next run
-    history_file = bundle_dir / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
-    if history_file.exists():
-        input_history_dest = search_base / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
-        try:
-            shutil.copy2(history_file, input_history_dest)
-            print(f"\n📥 Auto-copied history to input_macros:")
-            print(f"   {input_history_dest.name}")
-            print(f"   (Ready for next run!)")
-        except Exception as e:
-            print(f"\n⚠️  Could not auto-copy history: {e}")
-            print(f"   Manual copy: cp {history_file} {search_base}/")
-    
-    print()
+    print(f"📝 History: .github/string_combination_history.txt (persistent!)")
+    print("="*70 + "\n")
 
 if __name__ == "__main__":
     main()
