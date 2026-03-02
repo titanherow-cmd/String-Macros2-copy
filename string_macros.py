@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.8.1 - No Movement Before Clicks!
-- FIXED: No idle movements within 3 seconds before ANY click
-- REMOVED: Jitter completely disabled (testing if it causes issues)
-- Prevents cursor movement interfering with clicks
+string_macros.py - v3.8.2 - Fine-Tuned Timing
+- Pre-file pause: 0.8-1.5s | Post-pause transition: +0.5-1s
+- Idle movements: 2s threshold (was 5s), exempt from pre-file transition
+- Jitter: RE-ENABLED
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.8.1"
+VERSION = "v3.8.2"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -410,7 +410,7 @@ def insert_intra_file_pauses(events: list, rng: random.Random, protected_ranges:
 
 def insert_idle_mouse_movements(events, rng, movement_percentage):
     """
-    Insert realistic human-like mouse movements during idle periods (gaps > 5 seconds).
+    Insert realistic human-like mouse movements during idle periods (gaps > 2 seconds).
     
     Movements have:
     - Variable speeds (fast bursts, slow drifts, hesitations)
@@ -433,8 +433,8 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
             next_time = int(events[i + 1].get("Time", 0))
             gap = next_time - current_time
             
-            # Only process gaps >= 5 seconds
-            if gap >= 5000:
+            # Only process gaps >= 2 seconds
+            if gap >= 2000:
                 # Skip if in drag sequence
                 if is_in_drag_sequence(events, i):
                     continue
@@ -822,11 +822,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # Normalize timing
         base_time = min(e.get('Time', 0) for e in events)
         
-        # PRE-FILE PAUSE: 1-2 seconds BEFORE file plays
+        # PRE-FILE PAUSE: 0.8-1.5 seconds BEFORE file plays
         # This prevents drag issues when previous file ended with a click!
         if cycle_events:
-            # Random pause: 1000-2000ms (highly varied)
-            pre_file_pause = int(rng.uniform(1000.0 + rng.random()*50, 2000.0 + rng.random()*50))
+            # Random pause: 800-1500ms (calculated to millisecond precision)
+            pre_file_pause = int(rng.uniform(800.0, 1500.0))
             timeline += pre_file_pause
             
             # NOW do cursor transition (AFTER pause, so click has time to release)
@@ -844,10 +844,14 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
             
-            # Transition duration: 200-400ms (shorter since we already paused)
+            # ADDITIONAL pause after pre-file pause: 0.5-1 second
+            post_pause_delay = int(rng.uniform(500.0, 1000.0))
+            timeline += post_pause_delay
+            
+            # Transition duration: 200-400ms (for actual cursor movement)
             transition_duration = int(rng.uniform(200, 400))
             
-            # Add smooth transition AFTER the pause
+            # Add smooth transition AFTER both pauses
             if last_x and first_x and (last_x != first_x or last_y != first_y):
                 transition_path = generate_human_path(
                     last_x, last_y, first_x, first_y,
@@ -914,12 +918,11 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm):
         # Cycle contains dmwm file - no modifications
         return cycle_events, stats
     
-    # Step 1: JITTER DISABLED (testing if it causes issues)
-    # events_with_jitter, jitter_count, move_count, jitter_pct = add_pre_click_jitter(cycle_events, rng)
-    events_with_jitter = cycle_events  # Skip jitter
-    stats['jitter_count'] = 0
-    stats['total_moves'] = 0
-    stats['jitter_percentage'] = 0
+    # Step 1: Jitter (RE-ENABLED)
+    events_with_jitter, jitter_count, move_count, jitter_pct = add_pre_click_jitter(cycle_events, rng)
+    stats['jitter_count'] = jitter_count
+    stats['total_moves'] = move_count
+    stats['jitter_percentage'] = jitter_pct
     
     # Step 2: Rapid click detection
     protected_ranges = detect_rapid_click_sequences(events_with_jitter)
@@ -1037,7 +1040,16 @@ class SimplePersistentTracker:
         used = set()
         
         if not self.history_file.exists():
-            print(f"  📝 No history file found (create .github/string_combination_history.txt)")
+            print(f"  ⚠️  History file not found!")
+            print(f"  📝 CREATE IT: mkdir -p .github && touch .github/string_combination_history.txt")
+            print(f"  💡 The file should be EMPTY - code will write to it automatically!")
+            # Create it automatically
+            try:
+                self.history_file.parent.mkdir(parents=True, exist_ok=True)
+                self.history_file.touch()
+                print(f"  ✅ Created empty history file automatically!")
+            except Exception as e:
+                print(f"  ❌ Could not create file: {e}")
             return used
         
         try:
@@ -1476,7 +1488,7 @@ def main():
                     f"FILE TYPE: Raw (no time-adding features, no chat)",
                     f"  Between files pause: {format_ms_precise(total_inter)} (x{mult} Multiplier)",
                     f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: DISABLED (testing)",
+                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
                     ""
                 ]
             elif is_inef:
@@ -1495,7 +1507,7 @@ def main():
                     f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
                     f"                - Normal file pause: {format_ms_precise(total_normal_pauses)}",
                     f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: DISABLED (testing)",
+                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
                     ""
                 ]
                 if massive_pause_ms > 0:
@@ -1516,7 +1528,7 @@ def main():
                     f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
                     f"                - Normal file pause: {format_ms_precise(total_normal_pauses)}",
                     f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: DISABLED (testing)",
+                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
                     ""
                 ]
             
