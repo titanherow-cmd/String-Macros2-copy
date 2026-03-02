@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.8.2 - Fine-Tuned Timing
-- Pre-file pause: 0.8-1.5s | Post-pause transition: +0.5-1s
-- Idle movements: 2s threshold (was 5s), exempt from pre-file transition
-- Jitter: RE-ENABLED
+string_macros.py - v3.8.3 - Bundle-Organized History
+- History in: input_macros/combination_history/COMBINATION_HISTORY.txt
+- Format: [Bundle N - Folder] with all combos per bundle
+- Accumulates ALL previous bundles, deduplicates across ALL history
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.8.2"
+VERSION = "v3.8.3"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1013,88 +1013,127 @@ def scan_for_numbered_subfolders(base_path):
 # SIMPLE PERSISTENT HISTORY (Like Bundle Counter!)
 # ============================================================================
 
-class SimplePersistentTracker:
+
+class BundleOrganizedTracker:
     """
-    Simple persistent history - ONE file that keeps growing!
-    File: .github/string_combination_history.txt
+    Bundle-organized history with ALL previous bundles preserved!
     
-    Just appends combinations like a log file.
-    YOU create the file once, code just writes to it!
+    File: input_macros/combination_history/COMBINATION_HISTORY.txt
+    
+    Format:
+    [Bundle 39 - Folder: 20- Smth]
+    F1=F1 (22).json|F2=F2 (39).json|F3=F3 (1).json
+    F1=F1 (16).json|F2=F2 (28).json|F3=F3 (22).json
+    
+    [Bundle 40 - Folder: 20- Smth]
+    F1=F1 (64).json|F2=F2 (36).json|F3=F3 (29).json
+    
+    Each run loads ALL history, generates unique combos, saves ALL bundles!
     """
-    def __init__(self, subfolder_files, rng, folder_name):
+    def __init__(self, subfolder_files, rng, folder_name, bundle_id, input_dir):
         self.subfolder_files = subfolder_files
         self.rng = rng
         self.folder_name = folder_name
+        self.bundle_id = bundle_id
+        self.input_dir = input_dir
         
-        # ONE persistent file (you create it once in .github/)
-        self.history_file = Path('.github/string_combination_history.txt')
+        # History file in dedicated folder
+        self.history_file = input_dir / "combination_history" / "COMBINATION_HISTORY.txt"
         
-        # Load previous combinations for THIS folder only
-        self.used_combinations = self._load_history()
+        # Load ALL history from ALL bundles
+        self.all_history = self._load_all_history()
         
-        print(f"  📊 {len(self.used_combinations)} combinations already used for this folder")
+        # Get used combinations for THIS folder across ALL bundles
+        self.used_combinations = self._get_used_for_folder()
+        
+        # Track new combinations for this run
+        self.new_combinations = []
+        
+        print(f"  📊 {len(self.used_combinations)} combinations used in previous bundles")
         print(f"  📁 History file: {self.history_file}")
     
-    def _load_history(self):
-        """Load combinations for THIS folder from persistent file"""
-        used = set()
+    def _load_all_history(self):
+        """Load ALL bundles from history file"""
+        all_history = {}  # {(bundle_id, folder_name): [combos]}
         
         if not self.history_file.exists():
-            print(f"  ⚠️  History file not found!")
-            print(f"  📝 CREATE IT: mkdir -p .github && touch .github/string_combination_history.txt")
-            print(f"  💡 The file should be EMPTY - code will write to it automatically!")
-            # Create it automatically
-            try:
-                self.history_file.parent.mkdir(parents=True, exist_ok=True)
-                self.history_file.touch()
-                print(f"  ✅ Created empty history file automatically!")
-            except Exception as e:
-                print(f"  ❌ Could not create file: {e}")
-            return used
+            print(f"  📝 No history file found - will create on save")
+            return all_history
         
         try:
             with open(self.history_file, 'r') as f:
-                current_folder = None
+                current_key = None
                 for line in f:
                     line = line.strip()
                     if not line:
                         continue
                     
-                    # Folder header
+                    # Bundle header: [Bundle 39 - Folder: 20- Smth]
                     if line.startswith('[') and line.endswith(']'):
-                        current_folder = line[1:-1]
-                        continue
-                    
-                    # Combination for this folder
-                    if current_folder == self.folder_name:
-                        used.add(line)
+                        header = line[1:-1]
+                        # Parse: "Bundle 39 - Folder: 20- Smth"
+                        if ' - Folder: ' in header:
+                            parts = header.split(' - Folder: ')
+                            bundle_part = parts[0].replace('Bundle ', '').strip()
+                            folder_part = parts[1].strip()
+                            current_key = (bundle_part, folder_part)
+                            all_history[current_key] = []
+                    elif current_key:
+                        # Combination line
+                        all_history[current_key].append(line)
             
-            print(f"  ✅ Loaded {len(used)} previous combinations")
+            total_bundles = len(set(k[0] for k in all_history.keys()))
+            total_combos = sum(len(combos) for combos in all_history.values())
+            print(f"  ✅ Loaded {total_bundles} bundles with {total_combos} total combinations")
+            
         except Exception as e:
             print(f"  ⚠️  Error reading history: {e}")
         
+        return all_history
+    
+    def _get_used_for_folder(self):
+        """Get all combinations used for THIS folder across ALL bundles"""
+        used = set()
+        for (bundle, folder), combos in self.all_history.items():
+            if folder == self.folder_name:
+                used.update(combos)
         return used
     
-    def _save_combination(self, combo_sig):
-        """Append new combination to persistent file"""
+    def _save_all_history(self):
+        """Save complete history with new bundle added"""
         try:
-            # Create .github folder if needed
+            # Ensure directory exists
             self.history_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # Append mode - just add to the end!
-            with open(self.history_file, 'a') as f:
-                # Add folder header if this is first combo for this folder
-                if len(self.used_combinations) == 1:
-                    f.write(f"\n[{self.folder_name}]\n")
+            # Add current bundle to history
+            current_key = (str(self.bundle_id), self.folder_name)
+            if self.new_combinations:
+                self.all_history[current_key] = self.new_combinations
+            
+            # Write ALL history (all bundles, all folders)
+            with open(self.history_file, 'w') as f:
+                # Sort by bundle number, then folder name
+                sorted_keys = sorted(self.all_history.keys(), 
+                                   key=lambda x: (int(x[0]) if x[0].isdigit() else 999, x[1]))
                 
-                # Just append the combination
-                f.write(f"{combo_sig}\n")
+                for bundle, folder in sorted_keys:
+                    combos = self.all_history[(bundle, folder)]
+                    if combos:  # Only write if has combinations
+                        f.write(f"[Bundle {bundle} - Folder: {folder}]\n")
+                        for combo in combos:
+                            f.write(f"{combo}\n")
+                        f.write("\n")
+            
+            total = sum(len(c) for c in self.all_history.values())
+            print(f"  💾 Saved! Total: {total} combinations across all bundles")
             
         except Exception as e:
             print(f"  ⚠️  Could not save: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_next_combination(self):
-        """Get next unused combination"""
+        """Get next unused combination (checks ALL previous bundles)"""
         max_attempts = 500
         
         for _ in range(max_attempts):
@@ -1120,13 +1159,13 @@ class SimplePersistentTracker:
             # Create signature
             signature = "|".join(f"F{fn}={f.name}" for fn, f in combination)
             
-            # Check if unused
+            # Check if unused (across ALL bundles!)
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)
-                self._save_combination(signature)
+                self.new_combinations.append(signature)
                 return combination
         
-        # Fallback: return random one
+        # Fallback: return random
         print(f"  ⚠️  Using random combination (may repeat)")
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
@@ -1139,14 +1178,6 @@ class SimplePersistentTracker:
                 combination.append((folder_num, self.rng.choice(files)))
         
         return combination if combination else None
-
-
-# ============================================================================
-# MAIN FUNCTION
-# ============================================================================
-
-# UPDATED MAIN FUNCTION FOR STRING_MACROS v3.1.0
-# This replaces the existing main() function
 
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
@@ -1300,9 +1331,9 @@ def main():
             print("  ⚠️  No numbered subfolders to process")
             continue
         
-        # Use simple persistent tracker (one file, keeps growing!)
-        tracker = SimplePersistentTracker(
-            subfolder_files, rng, cleaned_folder_name
+        # Use bundle-organized tracker
+        tracker = BundleOrganizedTracker(
+            subfolder_files, rng, cleaned_folder_name, args.bundle_id, search_base
         )
         target_ms = args.target_minutes * 60000
         
@@ -1543,11 +1574,14 @@ def main():
         manifest_path = out_folder / f"!_MANIFEST_{folder_number}_!.txt"
         manifest_path.write_text("\n".join(manifest_lines), encoding="utf-8")
         print(f"\n  📋 Manifest written: {manifest_path.name}")
+        
+        # Save history after this folder
+        tracker._save_all_history()
     
     print("\n" + "="*70)
     print(f"✅ STRING MACROS COMPLETE - Bundle {args.bundle_id}")
     print(f"📦 Output: {bundle_dir}")
-    print(f"📝 History: .github/string_combination_history.txt (persistent!)")
+    print(f"📝 History: input_macros/combination_history/COMBINATION_HISTORY.txt")
     print("="*70 + "\n")
 
 if __name__ == "__main__":
