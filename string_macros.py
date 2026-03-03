@@ -10,7 +10,7 @@ string_macros.py - v3.8.5 - Bundle-Level Combination File
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.8.5"
+VERSION = "v3.8.6"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1593,9 +1593,9 @@ def main():
             bundle_combinations[cleaned_folder_name] = folder_combos
             print(f"  📊 Tracked {len(folder_combos)} combinations for bundle file")
     
-    # Write ONE combination file at bundle root level
+    # Write ONE combination file at SAME LEVEL as bundle folder
     if bundle_combinations:
-        combo_file = bundle_dir / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
+        combo_file = output_root / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
         try:
             with open(combo_file, 'w') as f:
                 f.write(f"=== BUNDLE {args.bundle_id} COMBINATION HISTORY ===\n\n")
