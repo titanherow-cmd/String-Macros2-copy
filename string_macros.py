@@ -10,7 +10,7 @@ string_macros.py - v3.8.5 - Bundle-Level Combination File
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.9.1"
+VERSION = "v3.8.7"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -289,123 +289,78 @@ def is_in_protected_range(index, protected_ranges):
 
 def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
     """
-    SMART JITTER SYSTEM v3.9.0
-    
-    Add realistic micro-movements to 21-32% of TOTAL file movements.
-    CRITICAL: NO jitter within 1 second before/after ANY click!
-    
-    Rules:
-    1. Jitter percentage: 21-32% of total MouseMove events
-    2. Exclusion zone: 1000ms before AND after any click
-    3. Only jitter MouseMove events (never Click, DragStart, RightDown, etc.)
-    4. Jitter = 2-3 micro-movements (±1-3px) + final snap to exact position
-    
+    Add realistic pre-move jitter: before a random 20-45% of ALL mouse movements,
+    add 2-3 micro-movements around the target (Â±1-3px), then snap to exact position.
+    The percentage is randomly chosen per file (non-rounded).
     Returns (events_with_jitter, jitter_count, total_moves, jitter_percentage).
     """
     if not events or len(events) < 2:
         return events, 0, 0, 0.0
     
-    # Step 1: Find ALL click times (any click-like event)
-    click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
-    click_times = set()
+    # Randomly choose jitter percentage for this file (20-45%, non-rounded)
+    jitter_percentage = rng.uniform(0.20, 0.45)
     
-    for event in events:
-        if event.get('Type') in click_types:
-            click_times.add(event.get('Time', 0))
-    
-    # Step 2: Find all MouseMove events that are SAFE to jitter
-    # Safe = NOT within 1000ms before/after ANY click
-    safe_movements = []
-    total_moves = 0
-    
-    for i, event in enumerate(events):
-        if event.get('Type') == 'MouseMove':
-            total_moves += 1
-            event_time = event.get('Time', 0)
-            
-            # Check if within exclusion zone of ANY click
-            is_safe = True
-            for click_time in click_times:
-                time_diff = abs(event_time - click_time)
-                if time_diff <= 1000:  # Within 1 second
-                    is_safe = False
-                    break
-            
-            if is_safe:
-                safe_movements.append((i, event))
-    
-    # Step 3: Calculate how many jitters to add (21-32% of TOTAL movements)
-    jitter_percentage = rng.uniform(0.21, 0.32)
-    target_jitters = int(total_moves * jitter_percentage)
-    
-    # Can't jitter more than safe movements available
-    target_jitters = min(target_jitters, len(safe_movements))
-    
-    if target_jitters == 0:
-        return events, 0, total_moves, jitter_percentage
-    
-    # Step 4: Randomly select which safe movements get jitter
-    movements_to_jitter = rng.sample(safe_movements, target_jitters)
-    
-    # Sort by index (descending) so we insert from end to start
-    # This prevents index shifting issues
-    movements_to_jitter.sort(key=lambda x: x[0], reverse=True)
-    
-    # Step 5: Add jitter to selected movements
     jitter_count = 0
+    total_moves = 0
+    i = 0
     
-    for idx, event in movements_to_jitter:
-        move_x = event.get('X')
-        move_y = event.get('Y')
-        move_time = event.get('Time')
+    while i < len(events):
+        event = events[i]
+        event_type = event.get('Type', '')
         
-        if move_x is None or move_y is None or move_time is None:
-            continue
-        
-        # Generate 2-3 micro-movements
-        num_jitters = rng.randint(2, 3)
-        jitter_events = []
-        
-        # Time budget: 100-200ms total
-        time_budget = rng.randint(100, 200)
-        time_per_jitter = time_budget // (num_jitters + 1)
-        
-        current_time = move_time - time_budget
-        
-        # Add jitter movements (±1-3 pixels)
-        for j in range(num_jitters):
-            offset_x = rng.randint(-3, 3)
-            offset_y = rng.randint(-3, 3)
+        # Apply to ALL mouse movements (MouseMove, Click, RightDown)
+        if event_type in ('MouseMove', 'Click', 'RightDown'):
+            total_moves += 1
             
-            jitter_x = int(move_x) + offset_x
-            jitter_y = int(move_y) + offset_y
-            
-            # Bounds check
-            jitter_x = max(100, min(1800, jitter_x))
-            jitter_y = max(100, min(1000, jitter_y))
-            
-            jitter_events.append({
-                'Type': 'MouseMove',
-                'Time': current_time,
-                'X': jitter_x,
-                'Y': jitter_y
-            })
-            
-            current_time += time_per_jitter
+            # Random chance based on jitter_percentage
+            if rng.random() < jitter_percentage:
+                move_x = event.get('X')
+                move_y = event.get('Y')
+                move_time = event.get('Time')
+                
+                if move_x is not None and move_y is not None and move_time is not None:
+                    num_jitters = rng.randint(2, 3)
+                    jitter_events = []
+                    
+                    time_budget = rng.randint(100, 200)
+                    time_per_jitter = time_budget // (num_jitters + 1)
+                    
+                    current_time = move_time - time_budget
+                    
+                    for j in range(num_jitters):
+                        offset_x = rng.randint(-3, 3)
+                        offset_y = rng.randint(-3, 3)
+                        
+                        jitter_x = int(move_x) + offset_x
+                        jitter_y = int(move_y) + offset_y
+                        
+                        jitter_x = max(100, min(1800, jitter_x))
+                        jitter_y = max(100, min(1000, jitter_y))
+                        
+                        jitter_events.append({
+                            'Type': 'MouseMove',
+                            'Time': current_time,
+                            'X': jitter_x,
+                            'Y': jitter_y
+                        })
+                        
+                        current_time += time_per_jitter
+                    
+                    # Final movement: snap to EXACT target position
+                    jitter_events.append({
+                        'Type': 'MouseMove',
+                        'Time': current_time,
+                        'X': int(move_x),
+                        'Y': int(move_y)
+                    })
+                    
+                    for idx, jitter_event in enumerate(jitter_events):
+                        events.insert(i + idx, jitter_event)
+                    
+                    i += len(jitter_events)
+                    jitter_count += 1
         
-        # Final movement: snap to EXACT target position
-        jitter_events.append({
-            'Type': 'MouseMove',
-            'Time': current_time,
-            'X': int(move_x),
-            'Y': int(move_y)
-        })
-        
-        # Insert jitter events BEFORE the original movement
-        for jitter_idx, jitter_event in enumerate(jitter_events):
-            events.insert(idx + jitter_idx, jitter_event)
-        
-        jitter_count += 1
+        i += 1
     
     return events, jitter_count, total_moves, jitter_percentage
 
@@ -1076,9 +1031,9 @@ def scan_for_numbered_subfolders(base_path):
                 else:
                     regular_files.append(json_file)
             
-            # Check if folder is "optional" (27-43% random chance to include)
+            # Check if folder is "optional" (40-60% random chance to include)
             is_optional = 'optional' in item.name.lower()
-            optional_chance = random.uniform(0.27, 0.43) if is_optional else None
+            optional_chance = random.uniform(0.40, 0.60) if is_optional else None
             
             if regular_files:  # Must have at least one regular file
                 numbered_folders[folder_num] = {
@@ -1132,6 +1087,9 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
+        
+        # Track NEW combinations generated THIS RUN
+        self.new_combinations = set()
         
         print(f"  📊 {len(self.used_combinations)} combinations loaded from history")
         print(f"  📁 History folder: {self.history_dir}")
@@ -1211,6 +1169,7 @@ class ManualHistoryTracker:
             # Check if unused
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)  # Mark as used
+                self.new_combinations.add(signature)   # Track as NEW for this run
                 return combination
         
         # Fallback: return random (may repeat)
@@ -1225,6 +1184,11 @@ class ManualHistoryTracker:
             files = folder_data['files']
             if files:
                 combination.append((folder_num, self.rng.choice(files)))
+        
+        # Track fallback combo too
+        if combination:
+            signature = "|".join(f"F{fn}={f.name}" for fn, f in combination)
+            self.new_combinations.add(signature)
         
         return combination if combination else None
 
@@ -1628,15 +1592,12 @@ def main():
         print(f"\n  📋 Manifest written: {manifest_path.name}")
         
         # Collect combinations for this folder (for bundle-level file)
-        # Get all used combinations from tracker (including history + this run)
-        folder_combos = []
-        for sig in tracker.used_combinations:
-            if sig and '|' in sig and 'F' in sig:
-                folder_combos.append(sig)
+        # Get NEW combinations generated THIS RUN
+        folder_combos = list(tracker.new_combinations)
         
         if folder_combos:
             bundle_combinations[cleaned_folder_name] = folder_combos
-            print(f"  📊 Tracked {len(folder_combos)} combinations for bundle file")
+            print(f"  📊 Tracked {len(folder_combos)} NEW combinations for bundle file")
     
     # Write ONE combination file at SAME LEVEL as bundle folder
     if bundle_combinations:
