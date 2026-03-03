@@ -1,26 +1,21 @@
-name: String macros (persisted counter, scan all folders, zip top-level)
+name: String macros (with combination file in zip)
 
 on:
   workflow_dispatch:
     inputs:
-      enable_chat:
-        description: 'Enable chat inserts'
-        required: false
-        default: false
-        type: boolean
-      specific_folders_merge:
-        description: 'Specif. folders merge'
-        required: false
-        default: false
-        type: boolean
       versions:
-        description: 'How many versions per group'
+        description: 'Total versions to generate'
         required: true
         default: '12'
       target_minutes:
         description: 'Target duration per stringed file'
         required: true
         default: '35'
+      enable_chat:
+        description: 'Enable chat inserts'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -53,28 +48,15 @@ jobs:
         run: |
           mkdir -p output
           
-          # Build command
           CMD="python3 string_macros.py input_macros output"
           CMD="$CMD --versions ${{ github.event.inputs.versions }}"
           CMD="$CMD --target-minutes ${{ github.event.inputs.target_minutes }}"
           CMD="$CMD --bundle-id ${{ env.BUNDLE_SEQ }}"
           
-          # Add --no-chat if disabled
           if [ "${{ inputs.enable_chat }}" = "false" ]; then
             CMD="$CMD --no-chat"
-            echo "🔕 Chat inserts DISABLED"
-          else
-            echo "✅ Chat inserts ENABLED (50% of files)"
           fi
           
-          # Note: Whitelist not implemented for string_macros yet
-          if [ "${{ inputs.specific_folders_merge }}" = "true" ]; then
-            echo "⚠️ Whitelist not yet implemented for string_macros (will process all folders)"
-          else
-            echo "🌐 Processing ALL folders"
-          fi
-          
-          # Execute
           echo "Running: $CMD"
           $CMD
             
@@ -97,7 +79,7 @@ jobs:
           ls -R output/
           
           if [ -d "output/$BUNDLE_NAME" ]; then
-            cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME"
+            cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME" COMBINATION_HISTORY_*.txt
           else
             echo "Error: Directory output/$BUNDLE_NAME was not found!"
             exit 1
