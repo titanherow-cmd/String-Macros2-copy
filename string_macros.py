@@ -10,7 +10,7 @@ string_macros.py - v3.8.5 - Bundle-Level Combination File
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.9.2"
+VERSION = "v3.9.3"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1540,6 +1540,24 @@ def main():
             # Add massive pause for INEFFICIENT
             if is_inef and len(stringed_events) > 1:
                 stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng)
+                
+                # FIX: Update file end times that occur after the massive pause
+                if massive_pause_ms > 0 and split_idx > 0 and split_idx < len(stringed_events):
+                    # Find the timestamp of the split point
+                    split_time = stringed_events[split_idx]['Time']
+                    
+                    # Update all file end times that occur after the split
+                    updated_file_info = []
+                    for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
+                        if end_time > split_time:
+                            # File ends after the pause - shift its end time
+                            updated_end_time = end_time + massive_pause_ms
+                            updated_file_info.append((folder_num, filename, is_dmwm, updated_end_time))
+                        else:
+                            # File ends before the pause - keep original time
+                            updated_file_info.append((folder_num, filename, is_dmwm, end_time))
+                    
+                    all_file_info_with_times = updated_file_info
             
             # Calculate total duration
             total_duration = stringed_events[-1]['Time']
