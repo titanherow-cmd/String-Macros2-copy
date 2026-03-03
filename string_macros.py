@@ -10,7 +10,7 @@ string_macros.py - v3.8.5 - Bundle-Level Combination File
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.8.7"
+VERSION = "v3.8.5"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1088,9 +1088,6 @@ class ManualHistoryTracker:
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
         
-        # Track NEW combinations generated THIS RUN
-        self.new_combinations = set()
-        
         print(f"  📊 {len(self.used_combinations)} combinations loaded from history")
         print(f"  📁 History folder: {self.history_dir}")
     
@@ -1168,8 +1165,7 @@ class ManualHistoryTracker:
             
             # Check if unused
             if signature not in self.used_combinations:
-                self.used_combinations.add(signature)  # Mark as used
-                self.new_combinations.add(signature)   # Track as NEW for this run
+                self.used_combinations.add(signature)  # Mark as used for this run
                 return combination
         
         # Fallback: return random (may repeat)
@@ -1184,11 +1180,6 @@ class ManualHistoryTracker:
             files = folder_data['files']
             if files:
                 combination.append((folder_num, self.rng.choice(files)))
-        
-        # Track fallback combo too
-        if combination:
-            signature = "|".join(f"F{fn}={f.name}" for fn, f in combination)
-            self.new_combinations.add(signature)
         
         return combination if combination else None
 
@@ -1592,16 +1583,19 @@ def main():
         print(f"\n  📋 Manifest written: {manifest_path.name}")
         
         # Collect combinations for this folder (for bundle-level file)
-        # Get NEW combinations generated THIS RUN
-        folder_combos = list(tracker.new_combinations)
+        # Get all used combinations from tracker
+        folder_combos = []
+        for sig in tracker.used_combinations:
+            if sig and '|' in sig and 'F' in sig:
+                folder_combos.append(sig)
         
         if folder_combos:
             bundle_combinations[cleaned_folder_name] = folder_combos
-            print(f"  📊 Tracked {len(folder_combos)} NEW combinations for bundle file")
+            print(f"  📊 Tracked {len(folder_combos)} combinations for bundle file")
     
-    # Write ONE combination file at SAME LEVEL as bundle folder
+    # Write ONE combination file at bundle root level
     if bundle_combinations:
-        combo_file = output_root / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
+        combo_file = bundle_dir / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
         try:
             with open(combo_file, 'w') as f:
                 f.write(f"=== BUNDLE {args.bundle_id} COMBINATION HISTORY ===\n\n")
