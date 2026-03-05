@@ -8,24 +8,20 @@ on:
         required: false
         default: false
         type: boolean
-      
       use_specific_folders:
         description: 'Use specific folders only (filter mode)'
         required: false
-        default: false
+        default: true
         type: boolean
-      
       versions:
-        description: 'Total versions to generate'
+        description: 'Total versions to generate *'
         required: true
         default: '12'
-      
       target_minutes:
-        description: 'Target duration per stringed file'
+        description: 'Target duration per stringed file *'
         required: true
         default: '35'
-      
-      specific_folders:
+      specific_folders_input:
         description: 'Specific folders to include (one per line, leave empty to use saved list)'
         required: false
         default: ''
@@ -58,55 +54,74 @@ jobs:
           fi
           echo "BUNDLE_SEQ=$VAL" >> "$GITHUB_ENV"
       
-      - name: Setup specific folders list
+      - name: Process specific folders input
+        id: process_folders
         run: |
-          # Check if user provided folder names in the UI
-          if [ -n "${{ github.event.inputs.specific_folders }}" ]; then
-            echo "📝 Using specific folders from UI input"
-            echo "${{ github.event.inputs.specific_folders }}" > .github/specific_folders_temp.txt
-            FOLDERS_FILE=".github/specific_folders_temp.txt"
-          elif [ -f .github/specific_folders_to_include.txt ]; then
-            echo "📁 Using saved folder list from .github/specific_folders_to_include.txt"
-            FOLDERS_FILE=".github/specific_folders_to_include.txt"
+          SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
+          
+          if [ -n "$SPECIFIC_INPUT" ]; then
+            # User provided input - create temporary file
+            echo "$SPECIFIC_INPUT" > /tmp/specific_folders_temp.txt
+            echo "FOLDERS_FILE=/tmp/specific_folders_temp.txt" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=UI input (temporary)" >> "$GITHUB_ENV"
+          elif [ -f ".github/specific_folders_to_include.txt" ]; then
+            # Use saved file
+            echo "FOLDERS_FILE=.github/specific_folders_to_include.txt" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=saved file (.github/specific_folders_to_include.txt)" >> "$GITHUB_ENV"
           else
-            echo "🌐 No specific folders file found"
-            FOLDERS_FILE=""
+            # No input and no file
+            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
           fi
-          echo "FOLDERS_FILE=$FOLDERS_FILE" >> "$GITHUB_ENV"
+      
+      - name: Display settings
+        run: |
+          echo "========================================"
+          echo "STRING MACROS v3.9.5"
+          echo "========================================"
+          echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
+          echo "Versions: ${{ github.event.inputs.versions }}"
+          echo "Target: ${{ github.event.inputs.target_minutes }} minutes"
+          if [ "${{ inputs.enable_chat }}" = "true" ]; then
+            echo "Chat: ENABLED (50% of files)"
+          else
+            echo "Chat: DISABLED"
+          fi
+          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
+            echo "Specific folders: ENABLED"
+            echo "Source: ${{ env.FOLDERS_SOURCE }}"
+            if [ -n "${{ env.FOLDERS_FILE }}" ]; then
+              echo "Folders:"
+              cat "${{ env.FOLDERS_FILE }}"
+            fi
+          else
+            echo "Specific folders: DISABLED (all folders)"
+          fi
+          echo "========================================"
         
-      - name: Execute string macro script
+      - name: Execute string macros script
         run: |
           mkdir -p output
           
+          # Build command
           CMD="python3 string_macros.py input_macros output"
           CMD="$CMD --versions ${{ github.event.inputs.versions }}"
           CMD="$CMD --target-minutes ${{ github.event.inputs.target_minutes }}"
           CMD="$CMD --bundle-id ${{ env.BUNDLE_SEQ }}"
           
-          # Chat inserts toggle
+          # Add --no-chat if disabled (default is disabled)
           if [ "${{ inputs.enable_chat }}" = "false" ]; then
             CMD="$CMD --no-chat"
-            echo "🔕 Chat inserts DISABLED"
-          else
-            echo "✅ Chat inserts ENABLED (50% of files)"
           fi
           
-          # Specific folders toggle + file
-          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-            if [ -n "$FOLDERS_FILE" ] && [ -f "$FOLDERS_FILE" ]; then
-              echo "📋 Processing specific folders only:"
-              cat "$FOLDERS_FILE"
-              CMD="$CMD --specific-folders $FOLDERS_FILE"
-            else
-              echo "⚠️ Specific folders mode enabled but no folder list found!"
-              echo "💡 Add folders to .github/specific_folders_to_include.txt or paste in UI field"
-              echo "🌐 Will process ALL folders"
-            fi
-          else
-            echo "🌐 Processing ALL folders"
+          # Add --specific-folders if enabled (default is enabled)
+          if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
+            CMD="$CMD --specific-folders ${{ env.FOLDERS_FILE }}"
           fi
           
+          # Execute
           echo "Running: $CMD"
+          echo ""
           $CMD
             
       - name: Commit and Push Counter Update
@@ -117,20 +132,34 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .github/string_bundle_counter.txt
-          git commit -m "Increment string bundle counter to $NEW_VAL" || echo "No changes"
+          git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
           git push || echo "Push failed"
+            
+      - name: Add combination file to output
+        run: |
+          BUNDLE_DIR="output/stringed_bundle_${{ env.BUNDLE_SEQ }}"
+          COMBO_FILE="COMBINATION_HISTORY_${{ env.BUNDLE_SEQ }}.txt"
+          
+          if [ -f "$COMBO_FILE" ]; then
+            cp "$COMBO_FILE" "$BUNDLE_DIR/" 2>/dev/null || echo "Could not copy combination file"
+          else
+            echo "No combination file found at $COMBO_FILE"
+          fi
             
       - name: Create ZIP artifact
         run: |
           BUNDLE_NAME="stringed_bundle_${{ env.BUNDLE_SEQ }}"
           ZIP_FILE="stringed_macros_${{ env.BUNDLE_SEQ }}.zip"
           
+          echo "Creating ZIP from: output/$BUNDLE_NAME"
           ls -R output/
           
           if [ -d "output/$BUNDLE_NAME" ]; then
-            cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME" COMBINATION_HISTORY_*.txt
+            cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME"
+            cd ..
+            echo "✓ Created: $ZIP_FILE"
           else
-            echo "Error: Directory output/$BUNDLE_NAME was not found!"
+            echo "✗ Error: Directory output/$BUNDLE_NAME was not found!"
             exit 1
           fi
           echo "FINAL_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
@@ -140,3 +169,4 @@ jobs:
         with:
           name: stringed_macros_bundle_${{ env.BUNDLE_SEQ }}
           path: ${{ env.FINAL_ZIP }}
+          retention-days: 90
