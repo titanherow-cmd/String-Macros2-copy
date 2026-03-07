@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.10.0 - End Folder Tags
-- NEW: "end" tag - Folder becomes definitive end point (e.g., "4 end- logout")
+string_macros.py - v3.10.1 - Complete Manifest Time Fix
+- FIXED: Raw files now show all pause types in manifest (was missing ~10s)
+- FIXED: Inefficient files now include massive pause in total
+- NEW: "end" tag - Folder becomes definitive end point
 - NEW: "optional/end" tag - Optional folder that ends loop if chosen
-- FIXED: Manifest time tracking (pre-pause, post-pause, transitions)
+- Manifest time tracking fully accurate (pre-pause, post-pause, transitions)
 - Bundle-level combination file
 - Optional folders: 27-43% random chance
 - "Always first/last" files supported
@@ -13,7 +15,7 @@ string_macros.py - v3.10.0 - End Folder Tags
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.10.0"
+VERSION = "v3.10.1"
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1734,18 +1736,26 @@ def main():
             version_label = f"Version {prefix}{v_code}_{total_min}m{total_sec}s:"
             
             if is_raw:
+                total_pause = total_inter + total_pre_file + total_post_pause + total_transitions
+                original_inter = int(total_inter / mult) if mult > 0 else total_inter
+                
                 manifest_entry = [
                     separator,
                     "",
                     version_label,
                     f"FILE TYPE: Raw (no time-adding features, no chat)",
-                    f"  Between files pause: {format_ms_precise(total_inter)} (x{mult} Multiplier)",
+                    f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
+                    f"BREAKDOWN",
+                    f"multiplier      - Between cycles pause: {format_ms_precise(original_inter)}",
+                    f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
+                    f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
+                    f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
                     f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
                     f"Mouse Jitter: {int(jitter_pct * 100)}%",
                     ""
                 ]
             elif is_inef:
-                total_pause = total_intra + total_inter + total_pre_file + total_post_pause + total_transitions
+                total_pause = total_intra + total_inter + total_pre_file + total_post_pause + total_transitions + massive_pause_ms
                 original_intra = total_intra
                 original_inter = int(total_inter / mult) if mult > 0 else total_inter
                 
@@ -1758,7 +1768,6 @@ def main():
                     f"BREAKDOWN",
                     f"total before    - Within original files pauses: {format_ms_precise(original_intra)}",
                     f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
-                    f"                - Normal file pause: {format_ms_precise(total_normal_pauses)}",
                     f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
                     f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
                     f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
@@ -1767,7 +1776,7 @@ def main():
                     ""
                 ]
                 if massive_pause_ms > 0:
-                    manifest_entry.insert(-2, f"Massive P1: {format_ms_precise(massive_pause_ms)}")
+                    manifest_entry.insert(-2, f"                - Massive pause: {format_ms_precise(massive_pause_ms)}")
             else:  # normal
                 total_pause = total_intra + total_inter + total_pre_file + total_post_pause + total_transitions
                 original_intra = total_intra
@@ -1782,7 +1791,6 @@ def main():
                     f"BREAKDOWN",
                     f"total before    - Within original files pauses: {format_ms_precise(original_intra)}",
                     f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
-                    f"                - Normal file pause: {format_ms_precise(total_normal_pauses)}",
                     f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
                     f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
                     f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
