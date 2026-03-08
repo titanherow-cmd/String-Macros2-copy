@@ -1,4 +1,4 @@
-name: String macros (with combination file in zip)
+name: String macros (v3.10.0 - persistent folders)
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ on:
       target_minutes:
         description: 'Target duration per stringed file *'
         required: true
-        default: '35'
+        default: '60'
       specific_folders_input:
         description: 'Specific folders to include (one per line, leave empty to use saved list)'
         required: false
@@ -58,26 +58,32 @@ jobs:
         id: process_folders
         run: |
           SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
+          SAVED_FILE=".github/specific_folders_to_include.txt"
           
           if [ -n "$SPECIFIC_INPUT" ]; then
-            # User provided input - create temporary file
-            echo "$SPECIFIC_INPUT" > /tmp/specific_folders_temp.txt
-            echo "FOLDERS_FILE=/tmp/specific_folders_temp.txt" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=UI input (temporary)" >> "$GITHUB_ENV"
-          elif [ -f ".github/specific_folders_to_include.txt" ]; then
-            # Use saved file
-            echo "FOLDERS_FILE=.github/specific_folders_to_include.txt" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=saved file (.github/specific_folders_to_include.txt)" >> "$GITHUB_ENV"
+            # User provided input - SAVE IT to permanent file
+            mkdir -p .github
+            echo "$SPECIFIC_INPUT" > "$SAVED_FILE"
+            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=UI input (saved to $SAVED_FILE)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
+            echo "✓ Saved UI input to $SAVED_FILE for future runs"
+          elif [ -f "$SAVED_FILE" ]; then
+            # Use existing saved file
+            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
           else
             # No input and no file
             echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
           fi
       
       - name: Display settings
         run: |
           echo "========================================"
-          echo "STRING MACROS v3.9.5"
+          echo "STRING MACROS v3.10.0"
           echo "========================================"
           echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
           echo "Versions: ${{ github.event.inputs.versions }}"
@@ -103,36 +109,50 @@ jobs:
         run: |
           mkdir -p output
           
-          # Build command
-          CMD="python3 string_macros.py input_macros output"
-          CMD="$CMD --versions ${{ github.event.inputs.versions }}"
-          CMD="$CMD --target-minutes ${{ github.event.inputs.target_minutes }}"
-          CMD="$CMD --bundle-id ${{ env.BUNDLE_SEQ }}"
+          # Build arguments array
+          ARGS=(
+            "input_macros"
+            "output"
+            "--versions" "${{ github.event.inputs.versions }}"
+            "--target-minutes" "${{ github.event.inputs.target_minutes }}"
+            "--bundle-id" "${{ env.BUNDLE_SEQ }}"
+          )
           
-          # Add --no-chat if disabled (default is disabled)
+          # Add --no-chat if disabled
           if [ "${{ inputs.enable_chat }}" = "false" ]; then
-            CMD="$CMD --no-chat"
+            ARGS+=("--no-chat")
           fi
           
-          # Add --specific-folders if enabled (default is enabled)
+          # Add --specific-folders if enabled
           if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
-            CMD="$CMD --specific-folders ${{ env.FOLDERS_FILE }}"
+            ARGS+=("--specific-folders" "${{ env.FOLDERS_FILE }}")
           fi
           
           # Execute
-          echo "Running: $CMD"
+          echo "Running: python3 string_macros.py ${ARGS[@]}"
           echo ""
-          $CMD
+          python3 string_macros.py "${ARGS[@]}"
             
-      - name: Commit and Push Counter Update
+      - name: Commit and Push Updates
         run: |
           NEW_VAL=$((BUNDLE_SEQ + 1))
           mkdir -p .github
           echo "$NEW_VAL" > .github/string_bundle_counter.txt
+          
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # Add counter
           git add .github/string_bundle_counter.txt
-          git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
+          
+          # Also add folders file if it was updated from UI input
+          if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
+            git add ".github/specific_folders_to_include.txt"
+            git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
+          else
+            git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
+          fi
+          
           git push || echo "Push failed"
             
       - name: Add combination file to output
