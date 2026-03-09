@@ -1,248 +1,366 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.11.0 - Decimal Folders + Feature Documentation
-- NEW: Decimal folder support (e.g., 3.5 goes between 3 and 4)
-- NEW: Comprehensive feature documentation in code
-- FIXED: Raw files now show all pause types in manifest
-- FIXED: Inefficient files now include massive pause in total
-- NEW: "end" tag - Folder becomes definitive end point
-- NEW: "optional/end" tag - Optional folder that ends loop if chosen
-- Manifest time tracking fully accurate (pre-pause, post-pause, transitions)
-- Bundle-level combination file
-- Optional folders: 27-43% random chance
-- "Always first/last" files supported
-- Manual history: Upload files to input_macros/combination_history/
+string_macros.py - v3.14.0 - Feature Refinements & Safety Updates
+- RENAMED: "dont mess with me" → "Don't use features on me" (backward compatible)
+- UPDATED: INEFFICIENT Before File Pause (20-50 sec, file length check >= 20s)
+- UPDATED: INEFFICIENT MASSIVE PAUSE (500-2900ms × mult, safe location detection)
+- ADDED: Safe location detection for MASSIVE PAUSE (excludes drags, rapid clicks, edges)
+- FIXED: File length check prevents INEFFICIENT Before File Pause on short files
+- Time sensitive folders from v3.13.0 maintained
+- All v3.13.0 features maintained
+"""
+
+# ============================================================================
+# 🤖 IMPORTANT REMINDER FOR AI/HUMAN EDITORS:
+# ============================================================================
+"""
+⚠️  WHEN YOU MODIFY ANY FEATURE IN THIS CODE:
+
+1. UPDATE THE FEATURE DOCUMENTATION BELOW (Lines 40-230)
+   - Change the description
+   - Update percentages/values
+   - Update code line numbers
+   - Update status if feature is disabled/enabled
+
+2. UPDATE THE VERSION NUMBER ABOVE
+   - Increment version (e.g., v3.12.0 → v3.12.1)
+   - Add change note in header
+
+3. UPDATE THE MANIFEST OUTPUT (Lines ~1970-2030)
+   - Ensure new features show in breakdown
+   - Update pause calculations if changed
+
+4. CHECK FOLDER/FILE TAG DETECTION (Lines ~1330-1350)
+   - If adding new tags, document them below
+
+This ensures the documentation stays accurate and users know what features exist!
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.11.0"
+VERSION = "v3.14.0"
 
 # ============================================================================
-# FEATURE DOCUMENTATION
+# FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
 # ============================================================================
 """
 ═══════════════════════════════════════════════════════════════════════════
-                    🎯 PAUSE FEATURES (ANTI-DETECTION)
+                    📋 DETECTED FOLDER & FILE TAGS
 ═══════════════════════════════════════════════════════════════════════════
 
-1. INTER-CYCLE PAUSES
-   Status: ✅ ACTIVE (Always)
-   What: Pause between complete folder cycles (F1→F2→F3→F4 → pause → F1...)
-   Duration: 500-5000ms × multiplier
-   Purpose: Natural break between action sequences
-   Code: Line ~1620 (inter_cycle_pause)
+FOLDER TAGS (detected in folder name, case-insensitive):
+  • "optional"        → Folder has 24-33% chance to be included per run
+  • "end"             → Folder becomes definitive loop endpoint (stops after)
+  • "optional/end"    → Combination: optional folder that ends loop IF chosen
+  • "time sensitive"  → No inefficient files generated (replaced with normal files)
+  • (Decimal support: "3.5" goes between folders 3 and 4)
 
-2. INTRA-FILE PAUSES
+FILE TAGS (detected in filename, case-insensitive):
+  • "always first" or "alwaysfirst"  → File always plays first in its folder
+  • "always last" or "alwayslast"    → File always plays last in its folder
+
+SPECIAL FOLDER (exact name match, case-insensitive):
+  • "Don't use features on me" → Files inserted unmodified (no features applied)
+  • (Also accepts old name "dont mess with me" for backward compatibility)
+
+═══════════════════════════════════════════════════════════════════════════
+                    GROUP 1: PAUSE BREAKS (Anti-Detection Timing)
+═══════════════════════════════════════════════════════════════════════════
+
+These features add natural pauses and delays to prevent robotic timing patterns.
+
+1. WITHIN FILE PAUSES
    Status: ✅ ACTIVE (Inefficient & Normal files only)
-   What: Pauses already inside original JSON files
-   Duration: From original recordings (typically 2-3 min)
-   Purpose: Preserves natural hesitations from recording
+   Old Name: "Intra-file pauses"
+   What: Pauses between individual actions INSIDE files (except double-clicks)
+   Source: From original macro recordings
+   Duration: Varies (typically 2-3 min total per file)
+   File Types: 
+     - Raw: REMOVED (stripped out)
+     - Inefficient: KEPT and multiplied
+     - Normal: KEPT and multiplied
+   Purpose: Natural hesitation between actions
    Code: Line ~850 (filter pauses in raw files)
+   Manifest: "Within original files pauses: Xm Xs"
 
-3. PRE-FILE PAUSES
-   Status: ✅ ACTIVE (Always)
-   What: Pause BEFORE each file plays
+2. PRE-PLAY BUFFER
+   Status: ✅ ACTIVE (Always, all file types)
+   Old Name: "Pre-file pauses"
+   What: Brief pause BEFORE each file starts playing
    Duration: 800-1500ms × multiplier
-   Purpose: Click release protection (prevents drag bugs)
-   Code: Line ~877-885 (pre_file_pause)
-   Total: ~2m 10s per output file
+   Purpose: Click release protection (prevents drag bugs from previous file)
+   Code: Line ~1125-1135 (pre_file_pause)
+   Total Impact: ~2m 10s per 50-minute output
+   Manifest: "Pre-file pauses: Xm Xs"
+
+3. INEFFICIENT BEFORE FILE PAUSE
+   Status: ✅ ACTIVE (Inefficient files ONLY, file >= 20 seconds)
+   Old Name: "Before File Pause" or "Inter-file pauses" or "Between cycles pause"
+   What: Longer pause between complete action cycles
+   Duration: 20-50 seconds (20000-50000ms, random, NOT rounded, NO multiplier)
+   File Length Check: Only applied if file duration >= 20 seconds
+   File Types:
+     - Raw: ❌ DISABLED
+     - Inefficient: ✅ ACTIVE (if file >= 20s)
+     - Normal: ❌ DISABLED
+   Purpose: Major break between action sequences
+   Code: Line ~2003-2012 (inter_cycle_pause with file length check)
+   Manifest: "Between original files pauses: Xm Xs"
 
 4. POST-PAUSE DELAYS
-   Status: ✅ ACTIVE (Always)
-   What: Delay AFTER pre-pause, before cursor moves
-   Duration: 500-1000ms × multiplier
-   Purpose: Preparation time, more realistic
-   Code: Line ~888-895 (post_pause_delay)
-   Total: ~1m 25s per output file
+   Status: ⚠️ DISABLED (Marked for future removal)
+   Old Name: "Post-pause delays"
+   What: Delay after pre-pause, before cursor moves
+   Duration: 500-1000ms × multiplier (when active)
+   Reason Disabled: Redundant with PRE-PLAY BUFFER
+   Code: Line ~1135-1140 (currently disabled)
+   Future: Will be removed in v4.0
+   Manifest: Shows 0m 0s when disabled
 
-5. CURSOR TRANSITIONS
-   Status: ✅ ACTIVE (Always)
-   What: Fast realistic mouse movement between file positions
-   Duration: 200-400ms per transition
-   Purpose: Natural cursor movement with Bézier curves
-   Code: Line ~898-923 (4-phase cursor transition)
-   Total: ~33s per output file
+5. INEFFICIENT MASSIVE PAUSE
+   Status: ✅ ACTIVE (Inefficient files ONLY)
+   Old Name: "Massive pause"
+   What: One random pause inserted at safe location
+   Duration: 500-2900ms × multiplier (e.g., ×2 = 1-5.8 sec, ×3 = 1.5-8.7 sec)
+   Safe Location Detection: EXCLUDES pause from:
+     - Drag sequences (between DragStart and DragEnd)
+     - Rapid click sequences (double-clicks, spam clicks)
+     - First/last 10% of file (for safety)
+   Where: Random safe point in middle 80% of file
+   File Types:
+     - Raw: ❌ NOT USED
+     - Inefficient: ✅ INSERTED
+     - Normal: ❌ NOT USED
+   Purpose: Simulates brief distraction/hesitation
+   Code: Line ~1155-1203 (insert_massive_pause with exclusions)
+   Manifest: "Massive pause: Xm Xs"
 
-6. MASSIVE PAUSE (Inefficient Only)
-   Status: ✅ ACTIVE (Inefficient files only)
-   What: One extremely long pause (60-120 seconds)
-   Where: Random midpoint in file
-   Purpose: Simulates distracted/inefficient behavior
-   Code: Line ~394-449 (insert_massive_pause)
+6. MULTIPLIER SYSTEM
+   Status: ✅ ACTIVE (Always)
+   What: Scales all pause durations by multiplier value
+   Values by File Type (UPDATED v3.13.0):
+     Raw Files:
+       • x1.0 (50% probability)
+       • x1.1 (50% probability)
+     
+     Normal Files:
+       • x1.3 (65% probability)
+       • x1.5 (35% probability)
+     
+     Inefficient Files:
+       • x2.0 (60% probability)
+       • x3.0 (40% probability)
+   
+   Purpose: Varied timing patterns across output files
+   Code: Line ~1918-1927 (multiplier selection)
+   Manifest: "(xN Multiplier)" shown in each file header
 
 ═══════════════════════════════════════════════════════════════════════════
-              🛡️ ANTI-DETECTION FEATURES (ANTI-BAN)
+              GROUP 2: PATTERN BREAKING (Anti-Detection Variance)
 ═══════════════════════════════════════════════════════════════════════════
 
-1. MOUSE JITTER
-   Status: ✅ ACTIVE (Always)
-   What: Random small offsets to cursor positions
-   Percentage: 21-32% of all mouse movements
-   Amount: Small random offset per movement
-   Purpose: Simulates natural hand tremor
-   Code: Line ~669-677 (apply_smart_jitter)
+These features add variation and unpredictability to prevent detectable patterns.
 
-2. SMART JITTER EXCLUSION ZONES
+1. CURSOR TO START POINT
    Status: ✅ ACTIVE (Always)
-   What: NO jitter near clicks (protects accuracy)
-   Zones: 1000ms before/after any click
-   Extended: 1500ms for rapid click sequences
-   Purpose: Maintains click accuracy while adding realism
-   Code: Line ~552-589 (detect_rapid_click_sequences)
+   Old Name: "Cursor transitions"
+   What: Smooth cursor movement from file end position to next file start
+   Duration: 200-400ms per transition (fast but realistic)
+   Method: 4-phase approach with Bézier curves
+   Purpose: No mouse teleportation; realistic cursor flow
+   Code: Line ~1140-1165 (4-phase cursor transition)
+   Impact: Adds ~30-35s to 50-minute output
+   Manifest: "Cursor transitions: Xm Xs"
+   Note: This DOES add time to total duration (intentional)
 
-3. RAPID CLICK SEQUENCE PROTECTION
-   Status: ✅ ACTIVE (Always)
-   What: Detects and protects rapid click patterns
-   Detection: 3+ clicks within 1500ms
-   Protection: Extended 1500ms exclusion zones (vs 1000ms normal)
-   Purpose: Prevents jitter from breaking rapid actions
-   Code: Line ~552-589 (detect_rapid_click_sequences)
-
-4. IDLE MOUSE MOVEMENTS
-   Status: ✅ ACTIVE (Always)
+2. IDLE CURSOR WANDERING
+   Status: ✅ ACTIVE (Always, during pauses > 1s)
+   Old Name: "Idle mouse movements"
    What: Small random mouse wiggles during long pauses
-   When: During any pause > 1 second
+   When: Any pause > 1 second
    Pattern: Smooth Bézier curves, realistic speed
-   Purpose: Looks human during waiting periods
+   Purpose: Cursor doesn't stay frozen during waits
    Code: Line ~702-793 (add_idle_movements)
-   Total: ~10 minutes per output file
+   Impact: ~7-11 minutes "movement time" per 50-min output
+   Manifest: "Idle Mouse Movements: Xm Xs"
+   Note: This does NOT extend file duration (happens during existing pauses)
 
-5. DRAG OPERATION PROTECTION
+3. MOUSE JITTER
+   Status: ✅ ACTIVE (21-32% of movements, with exclusions)
+   What: Random small offsets to cursor positions
+   Percentage: 21-32% of all mouse movements get jittered
+   Amount: Small random offset per movement
+   Exclusion Zones (NO JITTER):
+     • 1000ms before/after any click
+     • 1500ms for rapid click sequences (3+ clicks in 1500ms)
+     • During drag operations (hold + move + release)
+   Purpose: Natural hand tremor, but maintains click accuracy
+   Code: Line ~669-677 (apply_smart_jitter)
+   Protection: Line ~552-589 (detect rapid clicks)
+   Note: DISABLED near clicks to prevent off-target clicks
+   Manifest: "Mouse Jitter: XX%"
+
+4. RANDOM FILE QUEUE
    Status: ✅ ACTIVE (Always)
-   What: Never jitters during drag operations
+   What: Files selected randomly from each folder per cycle
+   Method: Random choice from available files
+   Avoids: Repeating same folder combination (via history)
+   Purpose: No predictable file order
+   Code: Line ~1475 (rng.choice for file selection)
+   Manifest: File order visible in manifest list
+
+═══════════════════════════════════════════════════════════════════════════
+            GROUP 3: ENSURING SMOOTH OPERATION (Reliability)
+═══════════════════════════════════════════════════════════════════════════
+
+These features ensure files play correctly without breaking or causing errors.
+
+1. RAPID CLICK PROTECTION
+   Status: ✅ ACTIVE (Always)
+   What: Detects rapid click sequences and extends jitter exclusion zones
+   Detection: 3+ clicks within 1500ms
+   Protection: Extends exclusion from 1000ms → 1500ms
+   Purpose: Prevents jitter from breaking rapid action sequences
+   Code: Line ~552-589 (detect_rapid_click_sequences)
+
+2. DRAG OPERATION PROTECTION
+   Status: ✅ ACTIVE (Always)
+   What: Detects drag operations and prevents jitter during them
    Detection: Hold + Move + Release patterns
+   Protection: NO jitter during entire drag sequence
    Purpose: Maintains drag accuracy
    Code: Line ~596-628 (detect_drag_operations)
 
-6. RANDOMIZED FILE SELECTION
+3. COMBINATION HISTORY
    Status: ✅ ACTIVE (Always)
-   What: Files selected randomly from each folder
-   Method: Random choice per folder per cycle
-   Purpose: No predictable file patterns
-   Code: Line ~1228 (rng.choice)
-
-7. COMBINATION HISTORY TRACKING
-   Status: ✅ ACTIVE (Always)
-   What: Never repeats same folder combination
-   Tracks: Which files used from each folder together
-   File: COMBINATION_HISTORY_XX.txt
+   What: Tracks which folder combinations have been used
+   Prevents: Repeating same combination across cycles
+   Tracking: "F1=file01.json|F2=file05.json|F3=file12.json"
+   File: COMBINATION_HISTORY_XX.txt (created per bundle)
    Purpose: Maximum variety across runs
-   Code: Line ~1135-1256 (ManualHistoryTracker)
+   Code: Line ~1380-1510 (ManualHistoryTracker class)
 
-8. VARIABLE MULTIPLIERS
+4. MANUAL HISTORY UPLOAD
+   Status: ✅ ACTIVE (If files present)
+   What: Upload old combination files to avoid repeating them
+   Location: input_macros/combination_history/
+   Reads: All .txt files automatically
+   Purpose: Never repeat across multiple runs/sessions
+   Code: Line ~1410-1450 (load history from folder)
+
+5. ALPHABETICAL NAMING
    Status: ✅ ACTIVE (Always)
-   What: Different speed multipliers per file type
-   Raw: x1, x2, x3
-   Inefficient: x2, x3
-   Normal: x1, x2
-   Purpose: Varied timing patterns
-   Code: Line ~1565-1582 (multiplier selection)
+   What: Organized naming convention for output files
+   Pattern:
+     Raw files:        ^XX_A, ^XX_B, ^XX_C
+     Inefficient:      ¬¬XX_D, ¬¬XX_E, ¬¬XX_F
+     Normal:           XX_G, XX_H, XX_I, XX_J, XX_K, XX_L
+   Purpose: Easy identification of file type at a glance
+   Code: Line ~1940-1980 (filename generation)
 
-9. OPTIONAL FOLDERS (27-43% CHANCE)
+6. FOLDER-NUMBER BASED STRUCTURE
+   Status: ✅ ACTIVE (Always, supports decimals)
+   Old Name: "Folder-based structure"
+   What: Folders numbered in sequence; files cycle through them
+   Format: "1- action/", "2- bank/", "3.5- optional/", "4- continue/"
+   Decimal Support: 3.5 goes after 3 and before 4
+   Pattern: F1 → F2 → F3 → F3.5 → F4 → F1 → ...
+   Purpose: Maintains sequential action steps
+   Code: Line ~1318-1360 (folder number extraction & sorting)
+
+7. 'OPTIONAL' TAGGED FOLDERS
    Status: ✅ ACTIVE (If "optional" in folder name)
-   What: Folder has random chance to be included
-   Chance: 27-43% (randomized per bundle)
-   Tag: "optional" anywhere in folder name
-   Purpose: Unpredictable action patterns
-   Code: Line ~1107-1114 (is_optional detection)
+   Old Name: "Optional folders"
+   Tag Detection: "optional" anywhere in folder name (case-insensitive)
+   Behavior: Folder has random chance to be included in each cycle
+   Chance: 24-33% (randomized per bundle, consistent within bundle)
+   Example: "3 optional- bank early/"
+   Purpose: Unpredictable action path variations
+   Code: Line ~1442 (is_optional detection)
 
-10. "END" FOLDER TAGS
-    Status: ✅ ACTIVE (If "end" in folder name)
-    What: Folder becomes definitive loop endpoint
-    Tag: "end" anywhere in folder name
-    Example: "4 end- logout" stops loop at folder 4
-    Purpose: Controlled endpoint timing
-    Code: Line ~1110-1117 (is_end detection)
+8. 'END' TAGGED FOLDERS
+   Status: ✅ ACTIVE (If "end" in folder name)
+   Tag Detection: "end" anywhere in folder name (case-insensitive)
+   Behavior: Folder becomes definitive loop endpoint (stops after)
+   Example: "5 end- logout/"
+   Purpose: Controlled endpoint timing
+   Code: Line ~1347 (is_end detection)
 
-11. "OPTIONAL/END" COMBO
-    Status: ✅ ACTIVE (If both "optional" and "end" in name)
-    What: Optional folder that ends loop if chosen
-    Chance: 27-43% to include and end loop
-    Purpose: Sometimes end early, sometimes continue
-    Code: Line ~1221-1225 (is_optional_end handling)
+9. 'OPTIONAL/END' COMBO TAGGED FOLDERS
+   Status: ✅ ACTIVE (If both "optional" and "end" in name)
+   Tag Detection: Both "optional" AND "end" in folder name
+   Behavior: 
+     - 24-33% chance to include folder
+     - IF included: Loop stops at this folder
+     - IF skipped: Loop continues to next folders
+   Example: "3.5 optional/end- early bank/"
+   Purpose: Sometimes end early, sometimes continue full loop
+   Code: Line ~1448-1462 (is_optional_end handling)
+
+10. 'TIME SENSITIVE' TAGGED FOLDERS
+    Status: ✅ ACTIVE (If "time sensitive" in folder name)
+    New Feature: v3.13.0
+    Tag Detection: "time sensitive" anywhere in folder name (case-insensitive)
+    Behavior: NO inefficient files generated for this folder
+    File Distribution Changes:
+      - Regular folder: 3 Raw + 3 Inef + 6 Normal = 12 files
+      - Time sensitive: 3 Raw + 0 Inef + 9 Normal = 12 files
+    Example: "2 time sensitive- combat/"
+    Purpose: Activities requiring consistent timing (combat, PvP, timed tasks)
+    Code: Line ~1444 (is_time_sensitive detection), Line ~1894 (file type adjustment)
+    Note: Entire bundle affected if ANY folder is time_sensitive
+
+11. 'DON'T USE FEATURES ON ME' TAGGED FOLDERS
+    Status: ✅ ACTIVE (If folder name matches)
+    Old Name: "DMWM Support" or "dont mess with me"
+    Tag Detection: Exact match "Don't use features on me" (case-insensitive)
+    Backward Compatible: Also accepts old name "dont mess with me"
+    Behavior: Files from this folder inserted completely unmodified
+    Features Skipped: NO jitter, NO pauses, NO modifications
+    Marked In Manifest: "[UNMODIFIED] filename.json"
+    Purpose: Include specific pre-made sequences as-is
+    Code: Line ~1433-1441 (folder detection)
 
 12. ALWAYS FIRST/LAST FILES
     Status: ✅ ACTIVE (If tagged in filename)
-    What: Specific files always play first/last in folder
-    Tags: "always first" or "always last" in filename
-    Purpose: Guaranteed sequence control
-    Code: Line ~1096-1103 (always_first/always_last detection)
+    Tag Detection: "always first", "alwaysfirst", "always last", "alwayslast"
+    Location: In filename (case-insensitive)
+    Behavior:
+      - "always first" → Plays first in its folder (before random selection)
+      - "always last" → Plays last in its folder (after random selection)
+    Example: "setup_always_first.json", "cleanup_alwayslast.json"
+    Purpose: Guaranteed sequence control within folders
+    Code: Line ~1333-1340 (always_first/last detection)
 
-═══════════════════════════════════════════════════════════════════════════
-                    📂 FOLDER ORGANIZATION FEATURES
-═══════════════════════════════════════════════════════════════════════════
+13. COMPREHENSIVE MANIFEST
+    Status: ✅ ACTIVE (Always)
+    What: Detailed breakdown showing all timing and features
+    Location: __MANIFEST_XX__.txt in output folder
+    Shows:
+      - All file types and durations
+      - Complete pause breakdown by type
+      - File list with cumulative timeline
+      - Multiplier and jitter percentage
+      - Folder structure
+    Purpose: Complete transparency and verification
+    Code: Line ~1965-2045 (manifest generation)
 
-1. NUMBERED FOLDERS (DECIMAL SUPPORT)
-   Status: ✅ ACTIVE (Always)
-   What: Folders numbered in sequence (supports decimals!)
-   Format: "1/", "2/", "3/", "3.5/", "4/"
-   Decimal: 3.5 goes after 3 and before 4
-   Purpose: Sequential action steps with insertion capability
-   Code: Line ~1084-1088 (folder number extraction - UPDATED v3.11.0)
+14. SPECIFIC FOLDERS FILTERING
+    Status: ⚙️ OPTIONAL (--specific-folders <file>)
+    What: Only process folders listed in file
+    Default: Process ALL numbered folders
+    Usage: Pass text file with folder numbers (one per line)
+    Purpose: Run subset of activities
+    Code: Line ~1640-1665 (filtering logic)
 
-2. FOLDER LOOP STRUCTURE
-   Status: ✅ ACTIVE (Always)
-   What: Cycles through folders sequentially
-   Pattern: F1→F2→F3→F4→F1→F2→F3→F4...
-   Purpose: Maintains action sequences
-   Code: Line ~1217-1230 (folder iteration)
-
-3. SUBFOLDER FILTERING
-   Status: ✅ ACTIVE (If --specific-folders used)
-   What: Process only specified folders
-   Method: Upload list to input_macros/combination_history/
-   Purpose: Run subset of folders
-   Code: Line ~1402-1427 (specific_folders filtering)
-
-═══════════════════════════════════════════════════════════════════════════
-                    📝 OUTPUT & TRACKING FEATURES
-═══════════════════════════════════════════════════════════════════════════
-
-1. COMPREHENSIVE MANIFEST
-   Status: ✅ ACTIVE (Always)
-   What: Detailed breakdown of ALL pause types
-   Shows: Between cycles, pre-file, post-pause, cursor, intra, massive
-   Purpose: Complete transparency and verification
-   Code: Line ~1730-1800 (manifest generation)
-
-2. COMBINATION FILE EXPORT
-   Status: ✅ ACTIVE (Always)
-   What: Saves all folder combinations used
-   Format: F1=file01.json|F2=file05.json|F3=file12.json
-   File: COMBINATION_HISTORY_XX.txt
-   Purpose: Track history for future runs
-   Code: Line ~1806-1825 (combination file creation)
-
-3. ALPHABETICAL FILE NAMING
-   Status: ✅ ACTIVE (Always)
-   What: Organized naming by file type
-   Raw: ^XX_A, ^XX_B, ^XX_C
-   Inefficient: ¬¬XX_D, ¬¬XX_E, ¬¬XX_F
-   Normal: XX_G through XX_L
-   Purpose: Easy file type identification
-   Code: Line ~1686-1725 (filename generation)
-
-═══════════════════════════════════════════════════════════════════════════
-                    🎛️ OPTIONAL FEATURES (USER CONTROLLED)
-═══════════════════════════════════════════════════════════════════════════
-
-1. CHAT INSERTS
-   Status: ⚙️ OPTIONAL (--no-chat to disable)
-   What: Random chat messages inserted in files
-   Frequency: 50% of files (when enabled)
-   Default: DISABLED
-   Purpose: Social presence simulation
-   Code: Line ~1596-1604 (chat insertion logic)
-   Note: Currently disabled in workflow by default
-
-2. SPECIFIC FOLDERS FILTERING
-   Status: ⚙️ OPTIONAL (--specific-folders <file>)
-   What: Only process folders listed in file
-   Default: Process ALL folders
-   Purpose: Run subset of activities
-   Code: Line ~1402-1427 (filtering logic)
+15. CHAT INSERTS
+    Status: ⚙️ OPTIONAL (Disabled by default, --no-chat flag)
+    What: Random chat messages inserted in files
+    Frequency: 50% of files when enabled
+    Default: DISABLED in workflows
+    Purpose: Social presence simulation
+    Code: Line ~1850-1860 (chat insertion - currently bypassed)
 
 ═══════════════════════════════════════════════════════════════════════════
 """
@@ -1032,20 +1150,50 @@ class QueueFileSelector:
 
 
 
-def insert_massive_pause(events: list, rng: random.Random) -> tuple:
+def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) -> tuple:
     """
-    Insert one massive pause (4-9 minutes) at random point.
+    Insert one massive pause (500-2900ms × multiplier) at random point.
     For INEFFICIENT files only.
+    
+    EXCLUDES pause from:
+    - Drag sequences (between DragStart and DragEnd)
+    - Rapid click sequences (double-clicks, spam clicks)
+    - First/last 10% of file (for safety)
+    
     Returns (events_with_pause, pause_duration_ms, split_index)
     """
-    if not events or len(events) < 2:
+    if not events or len(events) < 10:
         return events, 0, 0
     
-    # Generate massive pause: 4-9 minutes (240000-540000ms)
-    pause_duration = rng.randint(240000, 540000)
+    # Generate massive pause: 500-2900ms × multiplier
+    pause_duration = int(rng.uniform(500.0, 2900.0) * mult)
     
-    # Pick random split point
-    split_index = rng.randint(0, len(events) - 2)
+    # Detect protected ranges (rapid clicks, double-clicks)
+    protected_ranges = detect_rapid_click_sequences(events)
+    
+    # Find safe split points (not in drag, not in rapid click, not in first/last 10%)
+    safe_indices = []
+    first_safe = int(len(events) * 0.1)  # Skip first 10%
+    last_safe = int(len(events) * 0.9)   # Skip last 10%
+    
+    for i in range(first_safe, last_safe):
+        # Check if in drag sequence
+        if is_in_drag_sequence(events, i):
+            continue
+        
+        # Check if in protected range (rapid clicks)
+        if is_in_protected_range(i, protected_ranges):
+            continue
+        
+        # This is a safe index
+        safe_indices.append(i)
+    
+    # If no safe indices found, return original events
+    if not safe_indices:
+        return events, 0, 0
+    
+    # Pick random safe split point
+    split_index = rng.choice(safe_indices)
     
     # Shift all events after split point
     for i in range(split_index + 1, len(events)):
@@ -1131,11 +1279,13 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
             
-            # ADDITIONAL pause after pre-file pause: 0.5-1 second
-            post_pause_delay = int(rng.uniform(500.0, 1000.0))
+            # POST-PAUSE DELAY: DISABLED (marked for removal in v4.0)
+            # Previously added 0.5-1s delay after pre-pause
+            # Redundant with PRE-PLAY BUFFER, so disabled
+            post_pause_delay = 0  # DISABLED: was int(rng.uniform(500.0, 1000.0))
             timeline += post_pause_delay
             
-            # NEW: Track this delay
+            # NEW: Track this delay (will show 0 in manifest)
             total_post_pause += post_pause_delay
             
             # Transition duration: 200-400ms (for actual cursor movement)
@@ -1308,12 +1458,14 @@ def scan_for_numbered_subfolders(base_path):
                 non_json_files.append(item)
             continue
         
-        # Check for "dont mess with me" folder (case-insensitive)
-        if item.name.lower() == 'dont mess with me':
+        # Check for "Don't use features on me" folder (case-insensitive)
+        # Also accepts old name "dont mess with me" for backward compatibility
+        folder_name_lower = item.name.lower()
+        if folder_name_lower == "don't use features on me" or folder_name_lower == "dont mess with me":
             # Add all JSON files from this folder as unmodified
             dmwm_files = sorted(item.glob("*.json"))
             unmodified_files.extend(dmwm_files)
-            print(f"  ⚠️  Found 'dont mess with me' folder: {len(dmwm_files)} unmodified files")
+            print(f"  ⚠️  Found 'Don't use features on me' folder: {len(dmwm_files)} unmodified files")
             continue
         
         # Extract number from folder name using regex (supports decimals!)
@@ -1339,12 +1491,15 @@ def scan_for_numbered_subfolders(base_path):
                 else:
                     regular_files.append(json_file)
             
-            # Check if folder is "optional" (27-43% random chance to include)
+            # Check if folder is "optional" (24-33% random chance to include)
             is_optional = 'optional' in item.name.lower()
-            optional_chance = random.uniform(0.27, 0.43) if is_optional else None
+            optional_chance = random.uniform(0.24, 0.33) if is_optional else None
             
             # Check if folder is "end" (becomes definitive end point)
             is_end = 'end' in item.name.lower()
+            
+            # Check if folder is "time sensitive" (no inefficient files generated)
+            is_time_sensitive = 'time sensitive' in item.name.lower()
             
             # "optional/end" combo: optional folder that ends loop if chosen
             is_optional_end = is_optional and is_end
@@ -1356,6 +1511,7 @@ def scan_for_numbered_subfolders(base_path):
                     'optional_chance': optional_chance,
                     'is_end': is_end,
                     'is_optional_end': is_optional_end,
+                    'is_time_sensitive': is_time_sensitive,
                     'always_first': always_first,
                     'always_last': always_last
                 }
@@ -1784,11 +1940,26 @@ def main():
             ""
         ]
         
+        # Check if any folders are 'time sensitive' (no inefficient files)
+        has_time_sensitive = any(
+            folder_data.get('is_time_sensitive', False) 
+            for folder_data in subfolder_files.values()
+        )
+        
         # Version loop: 3 Raw + 3 Inef + 6 Normal = 12 total
+        # OR: 3 Raw + 0 Inef + 9 Normal = 12 total (if time_sensitive)
         version_letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
         num_raw = 3
-        num_inef = 3
-        num_normal = 6
+        
+        if has_time_sensitive:
+            # Time sensitive: Replace inefficient files with normal files
+            num_inef = 0
+            num_normal = 9
+            print(f"  ⏱️  TIME SENSITIVE folder detected - Generating 0 Inef + 9 Normal (instead of 3 Inef + 6 Normal)")
+        else:
+            # Regular: Standard distribution
+            num_inef = 3
+            num_normal = 6
         
         for v_idx in range(min(args.versions, 12)):
             v_letter = version_letters[v_idx]
@@ -1798,13 +1969,16 @@ def main():
             is_inef = (num_raw <= v_idx < num_raw + num_inef)
             is_normal = (v_idx >= num_raw + num_inef)
             
-            # Set multiplier
+            # Set multiplier (UPDATED v3.13.0)
             if is_raw:
-                mult = rng.choices([1, 2, 3], weights=[50, 30, 20], k=1)[0]
+                # Raw: x1.0 or x1.1 (50/50)
+                mult = rng.choices([1.0, 1.1], weights=[50, 50], k=1)[0]
             elif is_inef:
-                mult = rng.choices([2, 3], weights=[50, 50], k=1)[0]
+                # Inefficient: x2.0 or x3.0 (60/40)
+                mult = rng.choices([2.0, 3.0], weights=[60, 40], k=1)[0]
             else:  # normal
-                mult = rng.choices([1, 2], weights=[62.5, 37.5], k=1)[0]
+                # Normal: x1.3 or x1.5 (65/35)
+                mult = rng.choices([1.3, 1.5], weights=[65, 35], k=1)[0]
             
             # Build cycles until target reached
             stringed_events = []
@@ -1854,11 +2028,16 @@ def main():
                 current_duration = stringed_events[-1]['Time'] if stringed_events else 0
                 cycle_duration = cycle_with_features[-1]['Time'] if cycle_with_features else 0
                 
-                # Add inter-cycle pause
+                # Add INEFFICIENT Before File Pause (only for inefficient files, only if file >= 20 sec)
                 inter_cycle_pause = 0
-                if stringed_events:
-                    inter_cycle_pause = int(rng.uniform(500.123, 4999.987) * mult)
-                    total_inter += inter_cycle_pause
+                if stringed_events and is_inef:
+                    # Check file length: Only apply if file is >= 20 seconds (20000ms)
+                    file_duration = cycle_duration  # Current cycle duration in ms
+                    if file_duration >= 20000:
+                        # INEFFICIENT Before File Pause: 20-50 seconds (20000-50000ms)
+                        # Random, not rounded, no multiplier applied
+                        inter_cycle_pause = int(rng.uniform(20000.0, 50000.0))
+                        total_inter += inter_cycle_pause
                     
                     # Add cursor transition during pause
                     last_x, last_y = None, None
@@ -1925,7 +2104,7 @@ def main():
             
             # Add massive pause for INEFFICIENT
             if is_inef and len(stringed_events) > 1:
-                stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng)
+                stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng, mult)
                 
                 # FIX: Update file end times that occur after the massive pause
                 if massive_pause_ms > 0 and split_idx > 0 and split_idx < len(stringed_events):
