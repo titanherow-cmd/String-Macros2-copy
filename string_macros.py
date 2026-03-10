@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.14.2 - Main Folder Time Sensitive Support
-- NEW: Main folder "time sensitive" tag now applies to ALL subfolders!
-- FIXED: If main folder has "time sensitive", all numbered subfolders inherit it
-- Priority: Main folder tag > Individual subfolder tags
-- Enhanced debugging from v3.14.1 maintained
-- All v3.14.0 features maintained
+string_macros.py - v3.15.1 - PRE-Play Buffer Testing
+- TESTING: PRE-Play Buffer set to flat 700ms (was 800-1500ms random)
+- REMINDER: Remember to review this change in next task
+- All v3.15.0 features maintained
 """
 
 # ============================================================================
@@ -37,7 +35,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.14.2"
+VERSION = "v3.15.1"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -88,26 +86,27 @@ These features add natural pauses and delays to prevent robotic timing patterns.
 2. PRE-PLAY BUFFER
    Status: ✅ ACTIVE (Always, all file types)
    Old Name: "Pre-file pauses"
-   What: Brief pause BEFORE each file starts playing
-   Duration: 800-1500ms × multiplier
+   What: Fixed pause BEFORE each file starts playing
+   Duration: 700ms (0.7 seconds) - FLAT, NO multiplier, NO randomization
    Purpose: Click release protection (prevents drag bugs from previous file)
-   Code: Line ~1125-1135 (pre_file_pause)
-   Total Impact: ~2m 10s per 50-minute output
-   Manifest: "Pre-file pauses: Xm Xs"
+   Code: Line ~1276-1284 (pre_file_pause)
+   Total Impact: ~2m 20s per 50-minute output (200 files × 700ms)
+   Manifest: "PRE-Play Buffer: Xm Xs"
+   NOTE: Testing change - remember to adjust if needed!
 
 3. INEFFICIENT BEFORE FILE PAUSE
-   Status: ✅ ACTIVE (Inefficient files ONLY, file >= 20 seconds)
+   Status: ✅ ACTIVE (Inefficient files ONLY, file >= 25 seconds)
    Old Name: "Before File Pause" or "Inter-file pauses" or "Between cycles pause"
    What: Longer pause between complete action cycles
-   Duration: 20-50 seconds (20000-50000ms, random, NOT rounded, NO multiplier)
-   File Length Check: Only applied if file duration >= 20 seconds
+   Duration: 10-30 seconds (10000-30000ms, random, NOT rounded, NO multiplier)
+   File Length Check: Only applied if file duration >= 25 seconds
    File Types:
      - Raw: ❌ DISABLED
-     - Inefficient: ✅ ACTIVE (if file >= 20s)
+     - Inefficient: ✅ ACTIVE (if file >= 25s)
      - Normal: ❌ DISABLED
    Purpose: Major break between action sequences
-   Code: Line ~2003-2012 (inter_cycle_pause with file length check)
-   Manifest: "Between original files pauses: Xm Xs"
+   Code: Line ~2084-2093 (inter_cycle_pause with file length check)
+   Manifest: "INEFFICIENT Before File Pause: Xm Xs"
 
 4. POST-PAUSE DELAYS
    Status: ⚠️ DISABLED (Marked for future removal)
@@ -123,7 +122,8 @@ These features add natural pauses and delays to prevent robotic timing patterns.
    Status: ✅ ACTIVE (Inefficient files ONLY)
    Old Name: "Massive pause"
    What: One random pause inserted at safe location
-   Duration: 500-2900ms × multiplier (e.g., ×2 = 1-5.8 sec, ×3 = 1.5-8.7 sec)
+   Duration: 2-5 minutes (120000-300000ms, random, NOT rounded) × multiplier
+   Examples: ×2.0 = 4-10 min | ×3.0 = 6-15 min
    Safe Location Detection: EXCLUDES pause from:
      - Drag sequences (between DragStart and DragEnd)
      - Rapid click sequences (double-clicks, spam clicks)
@@ -133,9 +133,9 @@ These features add natural pauses and delays to prevent robotic timing patterns.
      - Raw: ❌ NOT USED
      - Inefficient: ✅ INSERTED
      - Normal: ❌ NOT USED
-   Purpose: Simulates brief distraction/hesitation
+   Purpose: Simulates AFK/distracted behavior
    Code: Line ~1155-1203 (insert_massive_pause with exclusions)
-   Manifest: "Massive pause: Xm Xs"
+   Manifest: "INEFFICIENT MASSIVE PAUSE: Xm Xs"
 
 6. MULTIPLIER SYSTEM
    Status: ✅ ACTIVE (Always)
@@ -1183,8 +1183,8 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
     if not events or len(events) < 10:
         return events, 0, 0
     
-    # Generate massive pause: 500-2900ms × multiplier
-    pause_duration = int(rng.uniform(500.0, 2900.0) * mult)
+    # Generate massive pause: 2-5 minutes (120000-300000ms) × multiplier
+    pause_duration = int(rng.uniform(120000.0, 300000.0) * mult)
     
     # Detect protected ranges (rapid clicks, double-clicks)
     protected_ranges = detect_rapid_click_sequences(events)
@@ -1272,11 +1272,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # Normalize timing
         base_time = min(e.get('Time', 0) for e in events)
         
-        # PRE-FILE PAUSE: 0.8-1.5 seconds BEFORE file plays
+        # PRE-FILE PAUSE: 0.7 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
         if cycle_events:
-            # Random pause: 800-1500ms (calculated to millisecond precision)
-            pre_file_pause = int(rng.uniform(800.0, 1500.0))
+            # Fixed pause: 700ms exactly
+            pre_file_pause = 700
             timeline += pre_file_pause
             
             # NEW: Track this pause
@@ -1971,7 +1971,6 @@ def main():
             f"Stringed Bundle: stringed_bundle_{args.bundle_id}",
             f"Total Original Files: {total_original_files}",
             f"Total Original Files Duration: {format_ms_precise(total_original_ms)}",
-            f"Subfolders: {sorted(subfolder_files.keys())}",
             ""
         ]
         
@@ -2081,15 +2080,15 @@ def main():
                 current_duration = stringed_events[-1]['Time'] if stringed_events else 0
                 cycle_duration = cycle_with_features[-1]['Time'] if cycle_with_features else 0
                 
-                # Add INEFFICIENT Before File Pause (only for inefficient files, only if file >= 20 sec)
+                # Add INEFFICIENT Before File Pause (only for inefficient files, only if file >= 25 sec)
                 inter_cycle_pause = 0
                 if stringed_events and is_inef:
-                    # Check file length: Only apply if file is >= 20 seconds (20000ms)
+                    # Check file length: Only apply if file is >= 25 seconds (25000ms)
                     file_duration = cycle_duration  # Current cycle duration in ms
-                    if file_duration >= 20000:
-                        # INEFFICIENT Before File Pause: 20-50 seconds (20000-50000ms)
+                    if file_duration >= 25000:
+                        # INEFFICIENT Before File Pause: 10-30 seconds (10000-30000ms)
                         # Random, not rounded, no multiplier applied
-                        inter_cycle_pause = int(rng.uniform(20000.0, 50000.0))
+                        inter_cycle_pause = int(rng.uniform(10000.0, 30000.0))
                         total_inter += inter_cycle_pause
                     
                     # Add cursor transition during pause
@@ -2221,12 +2220,8 @@ def main():
                     f"FILE TYPE: Raw (no time-adding features, no chat)",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
                     f"BREAKDOWN",
-                    f"multiplier      - Between cycles pause: {format_ms_precise(original_inter)}",
-                    f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
-                    f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
-                    f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
-                    f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
+                    f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
+                    f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
                     ""
                 ]
             elif is_inef:
@@ -2241,17 +2236,14 @@ def main():
                     f"FILE TYPE: Inefficient",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
                     f"BREAKDOWN",
-                    f"total before    - Within original files pauses: {format_ms_precise(original_intra)}",
-                    f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
-                    f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
-                    f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
-                    f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
-                    f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
+                    f"                - Within File Pauses: {format_ms_precise(original_intra)}",
+                    f"                - INEFFICIENT Before File Pause: {format_ms_precise(original_inter)}",
+                    f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
+                    f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
                     ""
                 ]
                 if massive_pause_ms > 0:
-                    manifest_entry.insert(-2, f"                - Massive pause: {format_ms_precise(massive_pause_ms)}")
+                    manifest_entry.insert(-1, f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(massive_pause_ms)}")
             else:  # normal
                 total_pause = total_intra + total_inter + total_pre_file + total_post_pause + total_transitions
                 original_intra = total_intra
@@ -2264,13 +2256,9 @@ def main():
                     f"FILE TYPE: Normal",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
                     f"BREAKDOWN",
-                    f"total before    - Within original files pauses: {format_ms_precise(original_intra)}",
-                    f"multiplier      - Between original files pauses: {format_ms_precise(original_inter)}",
-                    f"                - Pre-file pauses: {format_ms_precise(total_pre_file)}",
-                    f"                - Post-pause delays: {format_ms_precise(total_post_pause)}",
-                    f"                - Cursor transitions: {format_ms_precise(total_transitions)}",
-                    f"Idle Mouse Movements: {format_ms_precise(total_idle)}",
-                    f"Mouse Jitter: {int(jitter_pct * 100)}%",
+                    f"                - Within File Pauses: {format_ms_precise(original_intra)}",
+                    f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
+                    f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
                     ""
                 ]
             
