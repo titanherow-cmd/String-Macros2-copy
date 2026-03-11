@@ -1,4 +1,4 @@
-name: String macros (v3.12.0 - Flat ZIP for specific folders)
+name: String macros (v3.12.1 - Flat ZIP fix)
 
 on:
   workflow_dispatch:
@@ -183,7 +183,7 @@ jobs:
               # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
               echo "Specific folders mode: Creating flat ZIP structure..."
               cd "output/$BUNDLE_NAME"
-              zip -r "../../$ZIP_FILE" .
+              zip -r "../../$ZIP_FILE" * .[^.]* 2>/dev/null || zip -r "../../$ZIP_FILE" *
               cd ../..
               echo "✓ Created flat structure: $ZIP_FILE"
             else
