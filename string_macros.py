@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.15.2 - CRITICAL BUG FIX: Click Timing
-- FIXED: MASSIVE PAUSE causing clicks to be held 1-4 seconds (drag/clamp issues)
-- Root cause: Pause was inserted right before DragStart, shifting DragEnd forward
-- Fix: Added check to prevent pause insertion immediately before DragStart events
+string_macros.py - v3.16.0 - Feature Enhancements & Refinements
+- ADDED: Event Timing Integrity Protection (GROUP 3 #3) - prevents pause/click interference
+- UPDATED: Jitter reduced to 9-21% (was 21-32%)
+- UPDATED: Cursor pathing now varies (efficient, swift, meandering, hesitant paths)
+- UPDATED: Manifest shows "BREAKDOWN before multiplier:" for clarity
 - TESTING: PRE-Play Buffer still at flat 700ms (remember to review)
-- All v3.15.1 features maintained
+- All v3.15.2 features maintained (click timing bug fix)
 """
 
 # ============================================================================
@@ -37,7 +38,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.15.2"
+VERSION = "v3.16.0"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -175,12 +176,17 @@ These features add variation and unpredictability to prevent detectable patterns
    Status: ✅ ACTIVE (Always)
    Old Name: "Cursor transitions"
    What: Smooth cursor movement from file end position to next file start
-   Duration: 200-400ms per transition (fast but realistic)
-   Method: 4-phase approach with Bézier curves
-   Purpose: No mouse teleportation; realistic cursor flow
-   Code: Line ~1140-1165 (4-phase cursor transition)
+   Duration: 200-400ms per transition (varies by path style)
+   Path Styles (random per transition):
+     • Efficient: Direct path, few curves, faster
+     • Swift: Very fast, straight line
+     • Meandering: Curved path, more wandering
+     • Hesitant: Slow start, acceleration, deceleration
+   Speed Variations: Very fast (100-200ms) to Very slow (700-1000ms)
+   Purpose: No mouse teleportation; realistic cursor flow with variety
+   Code: Line ~498-576 (generate_human_path with path styles)
    Impact: Adds ~30-35s to 50-minute output
-   Manifest: "Cursor transitions: Xm Xs"
+   Manifest: "CURSOR to Start Point: Xm Xs"
    Note: This DOES add time to total duration (intentional)
 
 2. IDLE CURSOR WANDERING
@@ -196,9 +202,9 @@ These features add variation and unpredictability to prevent detectable patterns
    Note: This does NOT extend file duration (happens during existing pauses)
 
 3. MOUSE JITTER
-   Status: ✅ ACTIVE (21-32% of movements, with exclusions)
+   Status: ✅ ACTIVE (9-21% of movements, with exclusions)
    What: Random small offsets to cursor positions
-   Percentage: 21-32% of all mouse movements get jittered
+   Percentage: 9-21% of all mouse movements get jittered
    Amount: Small random offset per movement
    Exclusion Zones (NO JITTER):
      • 1000ms before/after any click
@@ -241,7 +247,20 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Maintains drag accuracy
    Code: Line ~596-628 (detect_drag_operations)
 
-3. COMBINATION HISTORY
+3. EVENT TIMING INTEGRITY PROTECTION
+   Status: ✅ ACTIVE (Always, all time-adding features)
+   What: Prevents pauses/modifications from interfering with drag/click timing
+   Protection Zones (NO time modification):
+     • Between DragStart and DragEnd pairs
+     • Immediately BEFORE DragStart events
+     • Within rapid click sequences
+     • First/last 10% of file
+   Impact: Maintains click responsiveness (<200ms), prevents drag/clamp issues
+   Purpose: CRITICAL protection to prevent clicks being held 1-4 seconds
+   Code: Line ~1171-1220 (insert_massive_pause with protection)
+   Added: v3.15.2 (bug fix for click timing)
+
+4. COMBINATION HISTORY
    Status: ✅ ACTIVE (Always)
    What: Tracks which folder combinations have been used
    Prevents: Repeating same combination across cycles
@@ -250,7 +269,16 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Maximum variety across runs
    Code: Line ~1380-1510 (ManualHistoryTracker class)
 
-4. MANUAL HISTORY UPLOAD
+4. COMBINATION HISTORY
+   Status: ✅ ACTIVE (Always)
+   What: Tracks which folder combinations have been used
+   Prevents: Repeating same combination across cycles
+   Tracking: "F1=file01.json|F2=file05.json|F3=file12.json"
+   File: COMBINATION_HISTORY_XX.txt (created per bundle)
+   Purpose: Maximum variety across runs
+   Code: Line ~1380-1510 (ManualHistoryTracker class)
+
+5. MANUAL HISTORY UPLOAD
    Status: ✅ ACTIVE (If files present)
    What: Upload old combination files to avoid repeating them
    Location: input_macros/combination_history/
@@ -258,7 +286,7 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Never repeat across multiple runs/sessions
    Code: Line ~1410-1450 (load history from folder)
 
-5. ALPHABETICAL NAMING
+6. ALPHABETICAL NAMING
    Status: ✅ ACTIVE (Always)
    What: Organized naming convention for output files
    Pattern:
@@ -268,7 +296,7 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Easy identification of file type at a glance
    Code: Line ~1940-1980 (filename generation)
 
-6. FOLDER-NUMBER BASED STRUCTURE
+7. FOLDER-NUMBER BASED STRUCTURE
    Status: ✅ ACTIVE (Always, supports decimals)
    Old Name: "Folder-based structure"
    What: Folders numbered in sequence; files cycle through them
@@ -278,7 +306,7 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Maintains sequential action steps
    Code: Line ~1318-1360 (folder number extraction & sorting)
 
-7. 'OPTIONAL' TAGGED FOLDERS
+8. 'OPTIONAL' TAGGED FOLDERS
    Status: ✅ ACTIVE (If "optional" in folder name)
    Old Name: "Optional folders"
    Tag Detection: "optional" anywhere in folder name (case-insensitive)
@@ -288,7 +316,7 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Unpredictable action path variations
    Code: Line ~1442 (is_optional detection)
 
-8. 'END' TAGGED FOLDERS
+9. 'END' TAGGED FOLDERS
    Status: ✅ ACTIVE (If "end" in folder name)
    Tag Detection: "end" anywhere in folder name (case-insensitive)
    Behavior: Folder becomes definitive loop endpoint (stops after)
@@ -296,18 +324,18 @@ These features ensure files play correctly without breaking or causing errors.
    Purpose: Controlled endpoint timing
    Code: Line ~1347 (is_end detection)
 
-9. 'OPTIONAL/END' COMBO TAGGED FOLDERS
-   Status: ✅ ACTIVE (If both "optional" and "end" in name)
-   Tag Detection: Both "optional" AND "end" in folder name
-   Behavior: 
-     - 24-33% chance to include folder
-     - IF included: Loop stops at this folder
-     - IF skipped: Loop continues to next folders
-   Example: "3.5 optional/end- early bank/"
-   Purpose: Sometimes end early, sometimes continue full loop
-   Code: Line ~1448-1462 (is_optional_end handling)
+10. 'OPTIONAL/END' COMBO TAGGED FOLDERS
+    Status: ✅ ACTIVE (If both "optional" and "end" in name)
+    Tag Detection: Both "optional" AND "end" in folder name
+    Behavior: 
+      - 24-33% chance to include folder
+      - IF included: Loop stops at this folder
+      - IF skipped: Loop continues to next folders
+    Example: "3.5 optional/end- early bank/"
+    Purpose: Sometimes end early, sometimes continue full loop
+    Code: Line ~1448-1462 (is_optional_end handling)
 
-10. 'TIME SENSITIVE' TAGGED FOLDERS
+11. 'TIME SENSITIVE' TAGGED FOLDERS
     Status: ✅ ACTIVE (If "time sensitive" in folder name)
     New Feature: v3.13.0 | Enhanced: v3.14.2
     Tag Detection: "time sensitive" anywhere in folder name (case-insensitive)
@@ -337,7 +365,7 @@ These features ensure files play correctly without breaking or causing errors.
     Code: Line ~1449-1459 (main folder check), Line ~1505-1511 (subfolder check)
     Note: Entire bundle affected if ANY folder is time_sensitive
 
-11. 'DON'T USE FEATURES ON ME' TAGGED FOLDERS
+12. 'DON'T USE FEATURES ON ME' TAGGED FOLDERS
     Status: ✅ ACTIVE (If folder name matches)
     Old Name: "DMWM Support" or "dont mess with me"
     Tag Detection: Exact match "Don't use features on me" (case-insensitive)
@@ -348,7 +376,7 @@ These features ensure files play correctly without breaking or causing errors.
     Purpose: Include specific pre-made sequences as-is
     Code: Line ~1433-1441 (folder detection)
 
-12. ALWAYS FIRST/LAST FILES
+13. ALWAYS FIRST/LAST FILES
     Status: ✅ ACTIVE (If tagged in filename)
     Tag Detection: "always first", "alwaysfirst", "always last", "alwayslast"
     Location: In filename (case-insensitive)
@@ -359,7 +387,7 @@ These features ensure files play correctly without breaking or causing errors.
     Purpose: Guaranteed sequence control within folders
     Code: Line ~1333-1340 (always_first/last detection)
 
-13. COMPREHENSIVE MANIFEST
+14. COMPREHENSIVE MANIFEST
     Status: ✅ ACTIVE (Always)
     What: Detailed breakdown showing all timing and features
     Location: __MANIFEST_XX__.txt in output folder
@@ -372,7 +400,7 @@ These features ensure files play correctly without breaking or causing errors.
     Purpose: Complete transparency and verification
     Code: Line ~1965-2045 (manifest generation)
 
-14. SPECIFIC FOLDERS FILTERING
+15. SPECIFIC FOLDERS FILTERING
     Status: ⚙️ OPTIONAL (--specific-folders <file>)
     What: Only process folders listed in file
     Default: Process ALL numbered folders
@@ -380,7 +408,7 @@ These features ensure files play correctly without breaking or causing errors.
     Purpose: Run subset of activities
     Code: Line ~1640-1665 (filtering logic)
 
-15. CHAT INSERTS
+16. CHAT INSERTS
     Status: ⚙️ OPTIONAL (Disabled by default, --no-chat flag)
     What: Random chat messages inserted in files
     Frequency: 50% of files when enabled
@@ -475,7 +503,21 @@ def fix_click_events(events: list) -> list:
 
 def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     """
-    Generate a human-like mouse path with variable speed and wobbles.
+    Generate a human-like mouse path with variable speed, path styles, and wobbles.
+    
+    Path Styles:
+    - Efficient: Direct path, few curves, faster
+    - Meandering: Curved path, more wandering, varied speed
+    - Hesitant: Slow start, acceleration, deceleration
+    - Swift: Fast throughout, minimal curves
+    
+    Speed Variations:
+    - Very fast: 100-200ms typical
+    - Fast: 200-300ms typical
+    - Normal: 300-500ms typical
+    - Slow: 500-700ms typical
+    - Very slow: 700-1000ms typical
+    
     Returns: List of (time_ms, x, y) tuples.
     """
     if duration_ms < 100:
@@ -489,14 +531,44 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     if distance < 5:
         return [(0, end_x, end_y)]
     
-    speed_profile = rng.choice(['fast_start', 'slow_start', 'medium', 'hesitant'])
-    num_steps = max(3, min(int(distance / 15), int(duration_ms / 50)))
+    # Choose path style (determines curvature and speed pattern)
+    path_style = rng.choice(['efficient', 'meandering', 'hesitant', 'swift'])
     
-    # Add control points for curved path
-    num_control = rng.randint(1, 3)
+    # Determine num_steps based on distance and path style
+    if path_style == 'efficient':
+        # Direct, fewer steps
+        num_steps = max(3, min(int(distance / 20), int(duration_ms / 60)))
+    elif path_style == 'swift':
+        # Very fast, few steps
+        num_steps = max(2, min(int(distance / 25), int(duration_ms / 80)))
+    elif path_style == 'meandering':
+        # More steps for smoother curves
+        num_steps = max(5, min(int(distance / 10), int(duration_ms / 40)))
+    else:  # hesitant
+        # Medium steps
+        num_steps = max(4, min(int(distance / 15), int(duration_ms / 50)))
+    
+    # Add control points based on path style
+    if path_style == 'efficient':
+        # Few or no control points (straighter path)
+        num_control = rng.choice([0, 1])
+        offset_range = 0.15  # Less curve
+    elif path_style == 'swift':
+        # No control points (direct)
+        num_control = 0
+        offset_range = 0.0
+    elif path_style == 'meandering':
+        # More control points (curvier path)
+        num_control = rng.randint(2, 4)
+        offset_range = 0.4  # More curve
+    else:  # hesitant
+        # Medium control points
+        num_control = rng.randint(1, 2)
+        offset_range = 0.25
+    
     control_points = []
     for _ in range(num_control):
-        offset = rng.uniform(-0.3, 0.3) * distance
+        offset = rng.uniform(-offset_range, offset_range) * distance
         t = rng.uniform(0.2, 0.8)
         ctrl_x = start_x + dx * t + (-dy / (distance + 1)) * offset
         ctrl_y = start_y + dy * t + (dx / (distance + 1)) * offset
@@ -508,14 +580,18 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     for step in range(num_steps + 1):
         t_raw = step / num_steps
         
-        # Apply speed profile
-        if speed_profile == 'fast_start':
-            t = 1 - (1 - t_raw) ** 2
-        elif speed_profile == 'slow_start':
-            t = t_raw ** 2
-        elif speed_profile == 'hesitant':
+        # Apply speed profile based on path style
+        if path_style == 'efficient':
+            # Smooth acceleration
+            t = 1 - (1 - t_raw) ** 1.8
+        elif path_style == 'swift':
+            # Linear (constant speed)
+            t = t_raw
+        elif path_style == 'meandering':
+            # Variable speed with slight deceleration at end
             t = 0.5 * (1 - math.cos(t_raw * math.pi))
-        else:
+        else:  # hesitant
+            # Slow start, fast middle, slow end
             t = 0.5 * (1 - math.cos(t_raw * math.pi))
         
         # Calculate position
@@ -538,8 +614,14 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
                     else:
                         start_x, start_y = ctrl_x, ctrl_y
         
-        # Add wobble
-        wobble = rng.uniform(1, 5) if step > 0 and step < num_steps else 0
+        # Add wobble (less for swift, more for meandering)
+        if path_style == 'swift':
+            wobble = rng.uniform(0, 2) if step > 0 and step < num_steps else 0
+        elif path_style == 'meandering':
+            wobble = rng.uniform(1, 7) if step > 0 and step < num_steps else 0
+        else:
+            wobble = rng.uniform(1, 5) if step > 0 and step < num_steps else 0
+        
         x += rng.uniform(-wobble, wobble)
         y += rng.uniform(-wobble, wobble)
         
@@ -670,11 +752,11 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
     """
     SMART JITTER SYSTEM v3.9.0
     
-    Add realistic micro-movements to 21-32% of TOTAL file movements.
+    Add realistic micro-movements to 9-21% of TOTAL file movements.
     CRITICAL: NO jitter within 1 second before/after ANY click!
     
     Rules:
-    1. Jitter percentage: 21-32% of total MouseMove events
+    1. Jitter percentage: 9-21% of total MouseMove events
     2. Exclusion zone: 1000ms before AND after any click
     3. Only jitter MouseMove events (never Click, DragStart, RightDown, etc.)
     4. Jitter = 2-3 micro-movements (±1-3px) + final snap to exact position
@@ -713,8 +795,8 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
             if is_safe:
                 safe_movements.append((i, event))
     
-    # Step 3: Calculate how many jitters to add (21-32% of TOTAL movements)
-    jitter_percentage = rng.uniform(0.21, 0.32)
+    # Step 3: Calculate how many jitters to add (9-21% of TOTAL movements)
+    jitter_percentage = rng.uniform(0.09, 0.21)
     target_jitters = int(total_moves * jitter_percentage)
     
     # Can't jitter more than safe movements available
@@ -2238,7 +2320,7 @@ def main():
                     version_label,
                     f"FILE TYPE: Raw (no time-adding features, no chat)",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
-                    f"BREAKDOWN",
+                    f"BREAKDOWN before multiplier:",
                     f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
                     f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
                     ""
@@ -2254,7 +2336,7 @@ def main():
                     version_label,
                     f"FILE TYPE: Inefficient",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
-                    f"BREAKDOWN",
+                    f"BREAKDOWN before multiplier:",
                     f"                - Within File Pauses: {format_ms_precise(original_intra)}",
                     f"                - INEFFICIENT Before File Pause: {format_ms_precise(original_inter)}",
                     f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
@@ -2274,7 +2356,7 @@ def main():
                     version_label,
                     f"FILE TYPE: Normal",
                     f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
-                    f"BREAKDOWN",
+                    f"BREAKDOWN before multiplier:",
                     f"                - Within File Pauses: {format_ms_precise(original_intra)}",
                     f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
                     f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
