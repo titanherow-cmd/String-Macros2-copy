@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.2"
+VERSION = "v3.18.4"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -453,6 +453,30 @@ These features ensure files play correctly without breaking or causing errors.
         for vs what was actually available (most common cause: name mismatch)
     Result: Workflow fails at the Python step with the exact reason visible in logs.
     Code: main() — four sys.exit(1) calls replacing return statements
+
+19. FLAT FOLDER SUPPORT
+    Status: ✅ ACTIVE (Always, auto-detected)
+    Added: v3.18.4
+    What: Allows a main folder to contain JSON files directly with no numbered
+          subfolders. The script detects this automatically and treats all files
+          in the folder as a single pool (virtual subfolder 1.0).
+    Structure Supported:
+      NORMAL (numbered subfolders):        FLAT (files directly inside):
+      20- Smth R2H/                        20- Smth R2H/
+        1- action/                           file_a.json
+          file.json                          file_b.json
+        2- bank/                             always first.json
+          file.json
+    Behaviour:
+      - Files are randomly selected from the pool each cycle (same as a regular
+        numbered subfolder)
+      - always_first / always_last tags in filenames still work
+      - time_sensitive main folder tag still works
+      - logout files are excluded from the pool automatically
+      - Combination history tracks normally
+    Detection: Triggered when zero numbered subfolders are found but JSON files
+               exist directly in the folder
+    Code: scan_for_numbered_subfolders() — flat folder block at end of function
 
 ═══════════════════════════════════════════════════════════════════════════
 """
@@ -1688,6 +1712,47 @@ def scan_for_numbered_subfolders(base_path):
                 if file.is_file() and not file.name.endswith('.json'):
                     non_json_files.append(file)
     
+    # FLAT FOLDER SUPPORT:
+    # If no numbered subfolders were found, check if there are JSON files
+    # sitting directly in the folder itself. If so, treat the folder as a
+    # single virtual subfolder (number 1.0) so everything downstream works
+    # without any changes.
+    if not numbered_folders:
+        direct_json = sorted(base.glob('*.json'))
+        
+        # Exclude logout files from the pool
+        logout_names = {'logout.json', '- logout.json', '-logout.json'}
+        direct_json = [f for f in direct_json if f.name.lower() not in logout_names]
+        
+        if direct_json:
+            # Separate always_first / always_last from regular files
+            always_first = None
+            always_last = None
+            regular_files = []
+            for json_file in direct_json:
+                name_lower = json_file.name.lower()
+                if 'always first' in name_lower or 'alwaysfirst' in name_lower:
+                    always_first = json_file
+                    print(f"  📌 Found 'always first': {json_file.name}")
+                elif 'always last' in name_lower or 'alwayslast' in name_lower:
+                    always_last = json_file
+                    print(f"  📌 Found 'always last': {json_file.name}")
+                else:
+                    regular_files.append(json_file)
+            
+            if regular_files:
+                print(f"  📂 Flat folder detected — {len(regular_files)} file(s) treated as single pool (subfolder 1.0)")
+                numbered_folders[1.0] = {
+                    'files': regular_files,
+                    'is_optional': False,
+                    'optional_chance': None,
+                    'is_end': False,
+                    'is_optional_end': False,
+                    'is_time_sensitive': main_folder_time_sensitive,
+                    'always_first': always_first,
+                    'always_last': always_last
+                }
+
     # Add unmodified files to their respective numbered folder pools
     # They become regular files, just tracked separately
     dmwm_file_set = set(unmodified_files)
