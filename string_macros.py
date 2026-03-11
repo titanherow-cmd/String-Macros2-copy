@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.16.0 - Feature Enhancements & Refinements
-- ADDED: Event Timing Integrity Protection (GROUP 3 #3) - prevents pause/click interference
-- UPDATED: Jitter reduced to 9-21% (was 21-32%)
-- UPDATED: Cursor pathing now varies (efficient, swift, meandering, hesitant paths)
-- UPDATED: Manifest shows "BREAKDOWN before multiplier:" for clarity
-- TESTING: PRE-Play Buffer still at flat 700ms (remember to review)
-- All v3.15.2 features maintained (click timing bug fix)
+string_macros.py - v3.17.0 - Timing Order Fix & Workflow Improvements
+- FIXED: Cursor pathing now happens BEFORE PRE-play pause (more logical flow)
+  - OLD: File ends → Pause → Cursor moves → Next file
+  - NEW: File ends → Cursor moves → Pause → Next file
+  - Cursor movement is now part of previous file's "outro"
+- Workflow v3.12.0: Flat ZIP structure when using specific folders mode
+- All v3.16.0 features maintained
 """
 
 # ============================================================================
@@ -38,7 +38,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.16.0"
+VERSION = "v3.17.0"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1373,18 +1373,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # Normalize timing
         base_time = min(e.get('Time', 0) for e in events)
         
-        # PRE-FILE PAUSE: 0.7 seconds BEFORE file plays (FLAT, NO multiplier)
-        # This prevents drag issues when previous file ended with a click!
+        # CURSOR TRANSITION FIRST (as part of previous file's "outro")
+        # Then PRE-PLAY PAUSE happens before next file starts
         if cycle_events:
-            # Fixed pause: 700ms exactly
-            pre_file_pause = 700
-            timeline += pre_file_pause
-            
-            # NEW: Track this pause
-            total_pre_pause += pre_file_pause
-            
-            # NOW do cursor transition (AFTER pause, so click has time to release)
-            # Get last position
+            # Get last position from previous file
             last_x, last_y = None, None
             for e in reversed(cycle_events):
                 if e.get('X') is not None and e.get('Y') is not None:
@@ -1398,19 +1390,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
             
-            # POST-PAUSE DELAY: DISABLED (marked for removal in v4.0)
-            # Previously added 0.5-1s delay after pre-pause
-            # Redundant with PRE-PLAY BUFFER, so disabled
-            post_pause_delay = 0  # DISABLED: was int(rng.uniform(500.0, 1000.0))
-            timeline += post_pause_delay
-            
-            # NEW: Track this delay (will show 0 in manifest)
-            total_post_pause += post_pause_delay
-            
             # Transition duration: 200-400ms (for actual cursor movement)
             transition_duration = int(rng.uniform(200, 400))
             
-            # Add smooth transition AFTER both pauses
+            # Add smooth cursor transition (part of previous file's ending)
             if last_x and first_x and (last_x != first_x or last_y != first_y):
                 transition_path = generate_human_path(
                     last_x, last_y, first_x, first_y,
@@ -1428,7 +1411,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                 
                 timeline += transition_duration
                 
-                # NEW: Track transition time
+                # Track transition time
                 total_transition_time += transition_duration
                 
                 # Final position to ensure exact placement
@@ -1438,6 +1421,19 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
                     'X': first_x,
                     'Y': first_y
                 })
+            
+            # NOW: PRE-FILE PAUSE (700ms AFTER cursor has moved)
+            # This gives a pause at the starting position before file plays
+            pre_file_pause = 700
+            timeline += pre_file_pause
+            
+            # Track this pause
+            total_pre_pause += pre_file_pause
+            
+            # POST-PAUSE DELAY: DISABLED (marked for removal in v4.0)
+            post_pause_delay = 0
+            timeline += post_pause_delay
+            total_post_pause += post_pause_delay
         
         # Add events from current file
         for event in events:
