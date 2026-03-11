@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.17.4 - Infinite alphabet naming + PRE-Play buffer 300ms
-- CHANGED: PRE-Play Buffer reduced from 800ms to 300ms
-- ADDED: Alphabetical file naming now supports >26 versions via letter repetition
-  (A-Z for first 26, AA-AZ for next 26, AAA-AAZ for next 26, etc.)
-- All v3.17.0 features maintained
+string_macros.py - v3.18.0 - Cumulative: all v3.17.x fixes merged
+- v3.17.1: Fail-fast sys.exit(1) on bad input/missing folders (was silent return)
+- v3.17.2: PRE-Play buffer bug fix — files_added counter replaces fragile
+           "if cycle_events:" guard; fixes buffer skipped for always_first/last.
+           Also fixes "if last_x and first_x" → "is not None" (handles X=0)
+- v3.17.3: Bundle ID appended to output folder name in specific-folders mode
+           e.g. "20- Smth R2H" → "20- Smth R2H- 107"
+- v3.17.4: Infinite alphabet naming (A-Z, AA-ZZ, AAA-ZZZ...)
+           PRE-Play buffer reduced 800ms → 300ms
+           Version count no longer capped at 12
 """
 
 # ============================================================================
@@ -36,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.17.4"
+VERSION = "v3.18.0"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1348,7 +1353,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
     
     def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
         """Helper to add a file to the cycle"""
-        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_post_pause, total_transition_time
+        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_post_pause, total_transition_time, files_added
         
         # Load events
         try:
@@ -1443,8 +1448,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            # Track file info with its individual end time
             file_info_list.append((folder_num, file_label, is_dmwm, timeline))
+        files_added += 1
     
     # Main cycle building
     cycle_events = []
@@ -1452,6 +1457,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
     timeline = 0
     has_dmwm = False
     
+    files_added = 0  # Counts files added; guards pre-play buffer for every non-first file
     # NEW: Track pre-file pauses, post-pause delays, and cursor transitions
     total_pre_pause = 0
     total_post_pause = 0
@@ -2003,10 +2009,13 @@ def main():
         folder_num_match = re.search(r'\d+', cleaned_folder_name)
         folder_number = int(folder_num_match.group()) if folder_num_match else 0
         
-        print(f"\n🔨 Processing: {cleaned_folder_name}")
+        print(f"\n🔨 Processing: {output_folder_name if args.specific_folders else cleaned_folder_name}")
         
-        # Create output folder
-        out_folder = bundle_dir / cleaned_folder_name
+        # Create output folder — append bundle ID in specific folders mode
+        output_folder_name = cleaned_folder_name
+        if args.specific_folders:
+            output_folder_name = f"{cleaned_folder_name}- {args.bundle_id}"
+        out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
         # Copy logout file with @ prefix
