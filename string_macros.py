@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.8"
+VERSION = "v3.18.9"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -893,6 +893,11 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
         time_budget = rng.randint(100, 200)
         time_per_jitter = time_budget // (num_jitters + 1)
         
+        # Cap time_budget so jitter events never go before t=0
+        if move_time - time_budget < 0:
+            time_budget = max(0, int(move_time) - 1)
+        if time_budget == 0:
+            continue  # Not enough room before this event — skip jitter
         current_time = move_time - time_budget
         
         # Add jitter movements (±1-3 pixels)
@@ -2411,6 +2416,10 @@ def main():
             # 1. Convert Click events to LeftDown+LeftUp pairs (prevents clamp)
             # 2. Sort all events by Time (prevents out-of-order gaps)
             stringed_events = fix_click_events(stringed_events)
+            # Round all Times to int (rng.uniform() produces floats) and ensure non-negative
+            for e in stringed_events:
+                if 'Time' in e:
+                    e['Time'] = max(0, int(round(e['Time'])))
             stringed_events = sorted(stringed_events, key=lambda e: e.get('Time', 0))
             
             # Save file
