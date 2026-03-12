@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.5"
+VERSION = "v3.18.6"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2160,8 +2160,8 @@ def main():
         total_original_files = 0
         total_original_ms = 0
         
-        for folder_data in subfolder_files.values():
-            files = folder_data['files']
+        for _subfolder_data in subfolder_files.values():
+            files = _subfolder_data['files']
             total_original_files += len(files)
             for f in files:
                 total_original_ms += get_file_duration_ms(f)
@@ -2364,6 +2364,7 @@ def main():
                     break
             
             if not stringed_events:
+                print(f"  ⚠️  Version {v_letter}: no events built (all combos exceeded target or no valid combo) — skipping")
                 continue
             
             # Add massive pause for INEFFICIENT
@@ -2490,6 +2491,8 @@ def main():
         # Use the combinations we tracked during THIS RUN
         if folder_combinations_used:
             bundle_combinations[cleaned_folder_name] = folder_combinations_used
+        files_written = len(folder_combinations_used)
+        print(f"  ✅ Folder done: {output_folder_name} — {files_written} version(s) written")
             print(f"  📊 Tracked {len(folder_combinations_used)} combinations for bundle file")
     
     # Write ONE combination file at SAME LEVEL as bundle folder
