@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.7"
+VERSION = "v3.18.8"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2050,7 +2050,9 @@ def main():
         try:
             with open(args.specific_folders, 'r', encoding='utf-8') as f:
                 # Read folder names, strip whitespace, ignore empty lines
-                specific_names = [line.strip() for line in f if line.strip()]
+                # Split by newlines AND commas (GitHub Actions can collapse newlines to spaces/commas)
+                raw_lines = f.read().replace(',', '\n').splitlines()
+                specific_names = [name.strip() for name in raw_lines if name.strip()]
             
             if specific_names:
                 print(f"\n📋 Filtering to specific folders only:")
