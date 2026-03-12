@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.6"
+VERSION = "v3.18.7"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2493,7 +2493,6 @@ def main():
             bundle_combinations[cleaned_folder_name] = folder_combinations_used
         files_written = len(folder_combinations_used)
         print(f"  ✅ Folder done: {output_folder_name} — {files_written} version(s) written")
-            print(f"  📊 Tracked {len(folder_combinations_used)} combinations for bundle file")
     
     # Write ONE combination file at SAME LEVEL as bundle folder
     if bundle_combinations:
