@@ -1,10 +1,10 @@
-name: String macros (v3.12.3 - ZIP fix deployed to string.yml)
+name: String macros (v3.12.4 - comma-separated specific folders)
 
 on:
   workflow_dispatch:
     inputs:
       specific_folders_input:
-        description: 'Specific folders to include'
+        description: 'Specific folders to include (comma-separated if multiple)'
         required: false
         default: ''
         type: string
@@ -64,8 +64,10 @@ jobs:
           
           if [ -n "$SPECIFIC_INPUT" ]; then
             # User provided input - SAVE IT to permanent file
+            # GitHub Actions collapses multiline input to spaces, so we support
+            # comma-separated entries and convert them to one-per-line format.
             mkdir -p .github
-            echo "$SPECIFIC_INPUT" > "$SAVED_FILE"
+            echo "$SPECIFIC_INPUT" | tr ',' '\n' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | grep -v '^$' > "$SAVED_FILE"
             echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=UI input (saved to $SAVED_FILE)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
@@ -174,57 +176,41 @@ jobs:
           BUNDLE_NAME="stringed_bundle_${{ env.BUNDLE_SEQ }}"
           ZIP_FILE="stringed_macros_${{ env.BUNDLE_SEQ }}.zip"
           
-          echo "========================================"
           echo "Creating ZIP from: output/$BUNDLE_NAME"
-          echo "Full output directory listing:"
-          ls -R output/ || echo "(ls failed)"
-          echo "========================================"
+          ls -R output/
           
-          if [ ! -d "output/$BUNDLE_NAME" ]; then
+          if [ -d "output/$BUNDLE_NAME" ]; then
+            # Check if specific folders mode is enabled
+            if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
+              # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
+              echo "Specific folders mode: Creating flat ZIP structure..."
+              
+              # Check if directory has any content
+              if [ -z "$(ls -A "output/$BUNDLE_NAME")" ]; then
+                echo "✗ Error: Directory output/$BUNDLE_NAME is empty!"
+                exit 1
+              fi
+              
+              # List contents before zipping
+              echo "Contents to zip:"
+              ls -la "output/$BUNDLE_NAME"
+              
+              # Zip contents at root level using find (flat structure)
+              cd "output/$BUNDLE_NAME"
+              find . -mindepth 1 -print | zip -r@ "../../$ZIP_FILE"
+              cd ../..
+              echo "✓ Created flat structure: $ZIP_FILE"
+            else
+              # NORMAL MODE: Zip the entire bundle directory
+              echo "Normal mode: Creating standard ZIP structure..."
+              cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME"
+              cd ..
+              echo "✓ Created: $ZIP_FILE"
+            fi
+          else
             echo "✗ Error: Directory output/$BUNDLE_NAME was not found!"
             exit 1
           fi
-          
-          # Count files in bundle (recursive)
-          FILE_COUNT=$(find "output/$BUNDLE_NAME" -mindepth 1 | wc -l)
-          echo "Files found in bundle: $FILE_COUNT"
-          
-          if [ "$FILE_COUNT" -eq 0 ]; then
-            echo "✗ Error: Directory output/$BUNDLE_NAME is empty - Python script may have failed!"
-            echo "Checking output/ root for any files:"
-            ls -la output/
-            exit 1
-          fi
-          
-          echo "Contents to zip:"
-          ls -la "output/$BUNDLE_NAME"
-          
-          # Check if specific folders mode is enabled
-          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-            # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
-            echo "Specific folders mode: Creating flat ZIP structure..."
-            cd "output/$BUNDLE_NAME"
-            find . -mindepth 1 -print | zip -r@ "../../$ZIP_FILE"
-            ZIP_EXIT=$?
-            cd ../..
-            if [ $ZIP_EXIT -ne 0 ]; then
-              echo "✗ ZIP failed with exit code $ZIP_EXIT"
-              exit $ZIP_EXIT
-            fi
-            echo "✓ Created flat structure: $ZIP_FILE"
-          else
-            # NORMAL MODE: Zip the entire bundle directory
-            echo "Normal mode: Creating standard ZIP structure..."
-            cd output && zip -r "../$ZIP_FILE" "$BUNDLE_NAME"
-            ZIP_EXIT=$?
-            cd ..
-            if [ $ZIP_EXIT -ne 0 ]; then
-              echo "✗ ZIP failed with exit code $ZIP_EXIT"
-              exit $ZIP_EXIT
-            fi
-            echo "✓ Created: $ZIP_FILE"
-          fi
-          
           echo "FINAL_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
           
       - name: Upload stringed ZIP artifact
