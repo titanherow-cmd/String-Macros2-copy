@@ -8,7 +8,7 @@ string_macros.py - v3.18.0 - Cumulative: all v3.17.x fixes merged
 - v3.17.3: Bundle ID appended to output folder name in specific-folders mode
            e.g. "20- Smth R2H" → "20- Smth R2H- 107"
 - v3.17.4: Infinite alphabet naming (A-Z, AA-ZZ, AAA-ZZZ...)
-           PRE-Play buffer reduced 800ms → 300ms
+           PRE-Play buffer changed to random 500-800ms (not rounded, in ms)
            Version count no longer capped at 12
 """
 
@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.4"
+VERSION = "v3.18.5"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -433,7 +433,7 @@ These features ensure files play correctly without breaking or causing errors.
                 fails when X=0 (a valid screen coordinate, evaluates as falsy in Python).
                 Changed to "if last_x is not None and first_x is not None".
     Impact: All file transitions now guaranteed to have:
-              File ends → 300ms buffer → cursor path → next file starts
+              File ends → 500-800ms buffer (random) → cursor path → next file starts
     Code: add_file_to_cycle() inner function; files_added init in string_cycle()
 
 18. FAIL-FAST ERROR HANDLING
@@ -1438,8 +1438,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
         # PRE-FILE PAUSE: 0.8 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
         if cycle_events:
-            # Fixed pause: 300ms exactly
-            pre_file_pause = 300
+            # Random pause: 500-800ms, not rounded, calculated in ms
+            pre_file_pause = rng.uniform(500.0, 800.0)
             timeline += pre_file_pause
             
             # Track this pause
