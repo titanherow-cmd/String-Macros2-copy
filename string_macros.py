@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.18.0 - Cumulative: all v3.17.x fixes merged
+string_macros.py - v3.18.22 - Cumulative: all v3.17.x fixes merged + v3.18.x features
 - v3.17.1: Fail-fast sys.exit(1) on bad input/missing folders (was silent return)
 - v3.17.2: PRE-Play buffer bug fix — files_added counter replaces fragile
            "if cycle_events:" guard; fixes buffer skipped for always_first/last.
@@ -10,6 +10,26 @@ string_macros.py - v3.18.0 - Cumulative: all v3.17.x fixes merged
 - v3.17.4: Infinite alphabet naming (A-Z, AA-ZZ, AAA-ZZZ...)
            PRE-Play buffer changed to random 500-800ms (not rounded, in ms)
            Version count no longer capped at 12
+- v3.18.10: Post-snap gap protection (80–150ms) prevents DragStart zero-gap on file transition
+- v3.18.11: Optional tag now accepts decimal percentages (e.g. optional50.5, optional33.3)
+- v3.18.12: Single-subfolder always_first/last bracketing (one open/close per cycle)
+- v3.18.13: Chat insert rework — 1 chat per folder batch, spliced into middle third
+- v3.18.14: DISTRACTIONS feature (Feature 21) — 50 distraction files per bundle
+- v3.18.15: Distraction fixes: zero-gap collisions, None coords, right-click frequency,
+            back-to-back pauses, action weight rebalancing
+- v3.18.16: Each distraction file uses exactly 3 randomly-chosen features (from 5)
+- v3.18.17: Distraction events now match exact 6-field macro schema (Type, Time, X, Y,
+            Delta, KeyCode); KeyCode is Windows VK integer, never a string
+- v3.18.18: Distraction cooldown 17–40s per feature; DISTRACTIONS folder tagged with
+            bundle ID; overlap control (90–95% sequential, rest may overlap)
+- v3.18.19: parse_optional_chance supports decimal percentages globally
+- v3.18.20: Spacebar (VK 32) removed from distraction typing; no multi-word phrases
+- v3.18.21: Fixed distraction infinite-loop when pause was last_act and had earliest cooldown
+- v3.18.22: Shared cooldown 17–30s replaces per-feature clocks (simpler, no loop risk)
+            O(n) rewrite of insert_idle_mouse_movements, insert_massive_pause,
+            insert_intra_file_pauses, add_pre_click_jitter — was O(n²) causing
+            12+ minute hangs on 60-min bundles with ~66k events
+            Bundle history file now written alongside the ZIP (same directory level)
 """
 
 # ============================================================================
