@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.17"
+VERSION = "v3.18.20"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -306,18 +306,21 @@ These features ensure files play correctly without breaking or causing errors.
    Old Name: "Optional folders"
    Tag Detection: "optional" anywhere in folder name (case-insensitive)
    Behavior: Folder has random chance to be included in each cycle
-   Chance (default): 24-33% random range (rolled once per bundle, consistent within bundle)
+   Chance (default): 24.0–33.0% random float range (rolled once per bundle, consistent within bundle)
    Custom Chance: Append a number directly to the tag to override the default
-     • "optional50%"  → exactly 50% chance
-     • "optional10"   → exactly 10% chance
-     • "optional75"   → exactly 75% chance
-     • "optional"     → default 24-33% range (no number = use default)
-     The number is parsed from the tag itself; spaces, dashes, and % are ignored.
+     • "optional50%"   → exactly 50% chance
+     • "optional50.5"  → exactly 50.5% chance  ← decimals supported
+     • "optional33.3"  → exactly 33.3% chance  ← decimals supported
+     • "optional10"    → exactly 10% chance
+     • "optional75"    → exactly 75% chance
+     • "optional"      → default 24.0–33.0% range (no number = use default)
+     The number (integer OR decimal) is parsed from the tag; spaces, dashes, and % are ignored.
    Examples:
-     "3 optional- bank early/"           → default 24-33% chance
-     "3 optional50- bank early/"         → exactly 50% chance
-     "3 optional50%- bank early/"        → exactly 50% chance
-     "3 optional10- rare action/"        → exactly 10% chance
+     "3 optional- bank early/"           → default 24.0–33.0% chance
+     "3 optional50- bank early/"         → exactly 50.0% chance
+     "3 optional50.5- bank early/"       → exactly 50.5% chance
+     "3 optional50%- bank early/"        → exactly 50.0% chance
+     "3 optional10- rare action/"        → exactly 10.0% chance
    Purpose: Unpredictable action path variations with per-folder probability control
    Code: Line ~1442 (is_optional detection + parse_optional_chance())
 
@@ -337,8 +340,9 @@ These features ensure files play correctly without breaking or causing errors.
       - IF included: Loop stops at this folder
       - IF skipped: Loop continues to next folders
     Examples:
-      "3.5 optional/end- early bank/"    → default 24-33% chance
-      "3.5 optional50/end- early bank/"  → exactly 50% chance
+      "3.5 optional/end- early bank/"      → default 24.0-33.0% chance
+      "3.5 optional50/end- early bank/"    → exactly 50.0% chance
+      "3.5 optional50.5/end- early bank/" → exactly 50.5% chance
     Purpose: Sometimes end early, sometimes continue full loop
     Code: Line ~1448-1462 (is_optional_end handling)
 
@@ -622,26 +626,28 @@ def parse_optional_chance(folder_name: str) -> float:
     Parse the inclusion probability from an 'optional'-tagged folder name.
 
     Rules:
-      - No number after 'optional'  → random default 24-33%
-      - Number found (with/without %) → clamp to [1%, 99%] and use as fixed %
+      - No number after 'optional'  → random default 24.0–33.0% (float)
+      - Number found (integer OR decimal) → clamp to [1%, 99%] and use as fixed %
 
     Accepted formats (all case-insensitive):
-      "3 optional- bank/"          → random 0.24-0.33
-      "3 optional50- bank/"        → 0.50
-      "3 optional50%- bank/"       → 0.50
-      "3 optional 50- bank/"       → 0.50
-      "3 optional10/end- logout/"  → 0.10
+      "3 optional- bank/"           → random 0.24–0.33
+      "3 optional50- bank/"         → 0.50
+      "3 optional50.5- bank/"       → 0.505   ← decimal supported
+      "3 optional50%- bank/"        → 0.50
+      "3 optional 50- bank/"        → 0.50
+      "3 optional33.3/end- logout/" → 0.333   ← decimal supported
+      "3 optional10/end- logout/"   → 0.10
 
     Returns a float in (0, 1).
     """
     import re
-    # Find 'optional' then greedily grab any digits (with optional % or spaces)
-    match = re.search(r'optional\D{0,3}?(\d+)', folder_name, re.IGNORECASE)
+    # Capture integer OR decimal number after 'optional' (e.g. 50, 50.5, 33.3)
+    match = re.search(r'optional\D{0,3}?(\d+(?:\.\d+)?)', folder_name, re.IGNORECASE)
     if match:
-        pct = int(match.group(1))
-        pct = max(1, min(99, pct))   # clamp to 1–99
+        pct = float(match.group(1))
+        pct = max(1.0, min(99.0, pct))   # clamp to 1.0–99.0
         return pct / 100.0
-    # No number → default random range
+    # No number → default random range (float, never rounded)
     return random.uniform(0.24, 0.33)
 
 
@@ -1734,7 +1740,6 @@ for _c in 'abcdefghijklmnopqrstuvwxyz':
 _VK.update({
     '0': 48, '1': 49, '2': 50, '3': 51, '4': 52,
     '5': 53, '6': 54, '7': 55, '8': 56, '9': 57,
-    ' ': 32,           # Space
     'Back': 8,         # Backspace
     '.': 190, ',': 188, ';': 186, '/': 191,
     "'": 222, '[': 219, ']': 221, '\\': 220,
@@ -1764,8 +1769,8 @@ _DISTRACTION_WORDS = [
     "nice", "lol", "gg", "hey", "ok", "sure", "brb", "back", "sec",
     "wait", "almost", "done", "yes", "no", "maybe", "idk", "nah",
     "yeah", "yep", "nope", "omg", "wow", "thanks", "ty", "np",
-    "haha", "lmao", "ez", "rip", "oof", "whats up", "yo", "kk",
-    "cya", "afk", "gtg", "bbl", "wb", "gg wp", "nice one",
+    "haha", "lmao", "ez", "rip", "oof", "yo", "kk",
+    "cya", "afk", "gtg", "bbl", "wb", "ggwp", "niceone",
 ]
 
 # Keys that players accidentally spam then erase (letters + symbols with VK mappings)
@@ -1878,7 +1883,8 @@ def _add_key_spam(events, timeline, rng, cur_x, cur_y):
 
 
 def generate_distraction_files(distractions_src_folder, out_folder, rng,
-                                count: int = 50) -> int:
+                                count: int = 50,
+                                bundle_id: int = 0) -> int:
     """
     Generate `count` distraction files.
     Each file uses exactly 3 randomly-chosen features from {wander, pause,
@@ -1887,6 +1893,8 @@ def generate_distraction_files(distractions_src_folder, out_folder, rng,
       Type, Time, X, Y, Delta, KeyCode  (Delta/KeyCode None where unused)
     KeyCode values are Windows VK integers, never strings.
     No left clicks. Duration 1–3 min (float ms, rounded only at save).
+    Per-feature cooldown: 17–40 s between successive triggers of the same
+    feature, calculated in float ms, unique per feature per file.
     """
     from pathlib import Path as _Path
     out_folder = _Path(out_folder)
@@ -1917,6 +1925,20 @@ def generate_distraction_files(distractions_src_folder, out_folder, rng,
         cur_y    = file_rng.randint(250, 450)
         last_act = None
 
+        # Per-feature cooldown: each feature has its own independent clock.
+        # Cooldown 17 000–40 000 ms (float, never rounded), drawn fresh each trigger.
+        next_allowed = {a: 0.0 for a in chosen}
+
+        # OVERLAP CONTROL
+        # Sequential fraction: random decimal in [90.0, 95.0] percent.
+        # For that share of triggers, the next action must wait until the
+        # previous one has fully finished playing (action_busy_until).
+        # For the remaining (100 - sequential_pct)% of triggers, the new action
+        # may start while the previous is still playing (overlap allowed).
+        sequential_pct  = file_rng.uniform(90.0, 95.0)   # e.g. 92.47%
+        sequential_frac = sequential_pct / 100.0          # e.g. 0.9247
+        action_busy_until = 0.0   # absolute ms when last action's events end
+
         # Opening move
         tx       = file_rng.randint(150, 950)
         ty       = file_rng.randint(120, 620)
@@ -1925,15 +1947,39 @@ def generate_distraction_files(distractions_src_folder, out_folder, rng,
         for rel, px, py in path:
             events.append(_evt('MouseMove', timeline + rel, px, py))
         timeline += open_dur
+        action_busy_until = timeline
         cur_x, cur_y = tx, ty
 
         while timeline < target:
-            if last_act == 'pause' and 'pause' in chosen:
-                cands     = [a for a in chosen if a != 'pause']
-                cand_wts  = [w for a, w in ACTION_WEIGHTS if a in cands]
-                action    = file_rng.choices(cands, weights=cand_wts, k=1)[0]
+            # Actions available = chosen + off cooldown + no consecutive pause
+            available = [
+                a for a in chosen
+                if timeline >= next_allowed[a]
+                and not (a == 'pause' and last_act == 'pause')
+            ]
+
+            if not available:
+                # All on cooldown — jump to earliest next_allowed
+                earliest = min(next_allowed[a] for a in chosen)
+                timeline = earliest + _human_interval(file_rng, 50.0, 300.0)
+                action_busy_until = max(action_busy_until, timeline)
+                continue
+
+            avail_wts = [w for a, w in ACTION_WEIGHTS if a in available]
+            action    = file_rng.choices(available, weights=avail_wts, k=1)[0]
+
+            # Decide: sequential (wait for previous to finish) or overlap (start now)?
+            # The probability is drawn as a float (e.g. 0.9247) so the boundary
+            # between sequential and overlap zones is itself a decimal percentage.
+            if file_rng.random() < sequential_frac:
+                # Sequential zone: start after previous action fully ends
+                start_t = max(timeline, action_busy_until) + _safe_gap(file_rng)
             else:
-                action    = file_rng.choices(chosen, weights=chosen_wts, k=1)[0]
+                # Overlap zone: start from current timeline (may interleave events)
+                start_t = timeline + _safe_gap(file_rng)
+
+            # Temporarily shift timeline to start_t so action helpers use it
+            timeline = start_t
 
             if action == 'wander':
                 timeline, cur_x, cur_y = _add_mouse_wander(events, timeline, file_rng, cur_x, cur_y)
@@ -1945,6 +1991,13 @@ def generate_distraction_files(distractions_src_folder, out_folder, rng,
                 timeline = _add_typing(events, timeline, file_rng, cur_x, cur_y)
             elif action == 'key_spam':
                 timeline = _add_key_spam(events, timeline, file_rng, cur_x, cur_y)
+
+            # Record when this action's events end (for sequential enforcement)
+            action_busy_until = timeline
+
+            # Set this feature's individual cooldown (float ms, never rounded)
+            cooldown = file_rng.uniform(17000.0, 40000.0)
+            next_allowed[action] = timeline + cooldown
 
             last_act = action
             if timeline <= 0:
@@ -3027,8 +3080,8 @@ def main():
     if distractions_src:
         print("\n" + "="*70)
         print("🎭 Generating DISTRACTION files...")
-        dist_out = bundle_dir / "DISTRACTIONS"
-        n_written = generate_distraction_files(distractions_src, dist_out, rng, count=50)
+        dist_out = bundle_dir / f"DISTRACTIONS- {args.bundle_id}"
+        n_written = generate_distraction_files(distractions_src, dist_out, rng, count=50, bundle_id=args.bundle_id)
         print(f"  ✅ Written {n_written} distraction files → {dist_out.name}/")
     
     print("\n" + "="*70)
