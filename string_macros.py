@@ -41,7 +41,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.16"
+VERSION = "v3.18.17"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1723,197 +1723,175 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set()):
 # DISTRACTION FILE GENERATION
 # ============================================================================
 
+# Windows Virtual Key codes for keyboard events
+# (must be integers — the macro player does NOT accept strings)
+_VK = {
+    'a':8  # placeholder — built dynamically below
+}
+_VK = {}
+for _c in 'abcdefghijklmnopqrstuvwxyz':
+    _VK[_c] = ord(_c.upper())   # A=65 … Z=90
+_VK.update({
+    '0': 48, '1': 49, '2': 50, '3': 51, '4': 52,
+    '5': 53, '6': 54, '7': 55, '8': 56, '9': 57,
+    ' ': 32,           # Space
+    'Back': 8,         # Backspace
+    '.': 190, ',': 188, ';': 186, '/': 191,
+    "'": 222, '[': 219, ']': 221, '\\': 220,
+    '-': 189, '=': 187,
+})
+
+
+def _evt(type_, time, x=None, y=None, delta=None, keycode=None) -> dict:
+    """
+    Build a properly-structured macro event with ALL 6 required fields.
+    The macro player expects Type, Time, X, Y, Delta, KeyCode on EVERY event.
+    Keyboard events:  X=None, Y=None, Delta=None, KeyCode=<int VK code>
+    Mouse events:     X=<int>, Y=<int>, Delta=None, KeyCode=None
+    """
+    return {
+        'Type':    type_,
+        'Time':    time,
+        'X':       x,
+        'Y':       y,
+        'Delta':   delta,
+        'KeyCode': keycode,
+    }
+
+
 # Common words / phrases a player might idly type then delete
 _DISTRACTION_WORDS = [
     "nice", "lol", "gg", "hey", "ok", "sure", "brb", "back", "sec",
-    "wait", "hold on", "one sec", "almost", "nearly", "done", "yes",
-    "no", "maybe", "idk", "true", "nah", "yeah", "yep", "nope",
-    "omg", "wow", "damn", "nice one", "good job", "thanks", "ty",
-    "np", "yw", "haha", "lmao", "rofl", "ez", "rip", "oof",
-    "whats up", "yo", "kk", "cya", "afk", "gtg", "bbl", "wb",
+    "wait", "almost", "done", "yes", "no", "maybe", "idk", "nah",
+    "yeah", "yep", "nope", "omg", "wow", "thanks", "ty", "np",
+    "haha", "lmao", "ez", "rip", "oof", "whats up", "yo", "kk",
+    "cya", "afk", "gtg", "bbl", "wb", "gg wp", "nice one",
 ]
 
-# Keys that players accidentally spam then erase
+# Keys that players accidentally spam then erase (letters + symbols with VK mappings)
 _SPAM_KEYS = list("asdfghjklqwertyuiopzxcvbnm/.,;'[]-=")
 
 
 def _human_interval(rng, lo_ms: float, hi_ms: float) -> float:
-    """Return a random float ms in [lo, hi] — never rounded, human-range."""
     return rng.uniform(lo_ms, hi_ms)
 
 
 def _safe_gap(rng) -> float:
-    """Mandatory minimum gap between actions to prevent zero-timestamp collisions."""
+    """Minimum advance so no two events share a timestamp."""
     return _human_interval(rng, 30.0, 120.0)
 
 
-def _add_mouse_wander(events: list, timeline: float, rng,
-                      cur_x: int, cur_y: int) -> tuple:
-    """
-    Move cursor to 2-5 random destinations.
-    Returns (new_timeline, new_x, new_y).
-    FIX: Each segment starts strictly after the previous one ends.
-    """
-    num_moves = rng.randint(2, 5)
+def _add_mouse_wander(events, timeline, rng, cur_x, cur_y):
+    """Move cursor to 2–5 random destinations. Returns (timeline, x, y)."""
+    t = timeline + _safe_gap(rng)
     x, y = cur_x, cur_y
-    t = timeline + _safe_gap(rng)   # start strictly after caller's last event
-
-    for _ in range(num_moves):
+    for _ in range(rng.randint(2, 5)):
         tx = rng.randint(150, 950)
         ty = rng.randint(120, 620)
-        seg_dur = _human_interval(rng, 300, 1400)
+        seg_dur = _human_interval(rng, 300.0, 1400.0)
         path = generate_human_path(x, y, tx, ty, int(seg_dur), rng)
         for rel, px, py in path:
-            events.append({'Type': 'MouseMove', 'Time': t + rel, 'X': px, 'Y': py})
+            events.append(_evt('MouseMove', t + rel, px, py))
         t += seg_dur
         x, y = tx, ty
-        # Inter-move pause (not too long — this is wandering, not idle)
-        t += _human_interval(rng, 80, 500)
-
+        t += _human_interval(rng, 80.0, 500.0)
     return t, x, y
 
 
-def _add_cursor_pause(events: list, timeline: float, rng,
-                      cur_x: int, cur_y: int) -> tuple:
-    """
-    Stay still (or drift slightly) for 0.5–2 seconds.
-    FIX: Capped at 2s max to prevent dead stretches. Drift event placed at
-         strict mid-point so it can never share a timestamp with the incoming
-         or outgoing timeline boundary.
-    Returns (new_timeline, cur_x, cur_y).
-    """
-    duration = _human_interval(rng, 500.0, 2000.0)   # was 4000 — capped
-    t_start = timeline + _safe_gap(rng)
-
+def _add_cursor_pause(events, timeline, rng, cur_x, cur_y):
+    """Stay still (optional drift) for 0.5–2 s. Returns (timeline, x, y)."""
+    duration = _human_interval(rng, 500.0, 2000.0)
+    t_start  = timeline + _safe_gap(rng)
     if rng.random() < 0.45:
-        drift_x = max(100, min(1800, cur_x + rng.randint(-10, 10)))
-        drift_y = max(100, min(1000, cur_y + rng.randint(-10, 10)))
+        dx = max(100, min(1800, cur_x + rng.randint(-10, 10)))
+        dy = max(100, min(1000, cur_y + rng.randint(-10, 10)))
         mid = t_start + duration * rng.uniform(0.3, 0.7)
-        events.append({'Type': 'MouseMove', 'Time': mid,        'X': drift_x, 'Y': drift_y})
-        events.append({'Type': 'MouseMove', 'Time': t_start + duration, 'X': cur_x,   'Y': cur_y})
-
+        events.append(_evt('MouseMove', mid,              dx,    dy))
+        events.append(_evt('MouseMove', t_start+duration, cur_x, cur_y))
     return t_start + duration, cur_x, cur_y
 
 
-def _add_right_click(events: list, timeline: float, rng,
-                     cur_x: int, cur_y: int) -> tuple:
-    """
-    Move to a nearby position then right-click.
-    FIX: Always moves first so RightDown is NEVER at the same timestamp as the
-         incoming cursor position. Coordinates are always integers, never None.
-    Returns (new_timeline, new_x, new_y).
-    """
-    t = timeline + _safe_gap(rng)
-
-    # Always approach — ensures RightDown is separated from last MouseMove
+def _add_right_click(events, timeline, rng, cur_x, cur_y):
+    """Approach then right-click. Returns (timeline, x, y)."""
+    t  = timeline + _safe_gap(rng)
     tx = max(100, min(1800, cur_x + rng.randint(-120, 120)))
-    ty = max(100, min(1000, cur_y + rng.randint(-80, 80)))
-    move_dur = _human_interval(rng, 200, 800)
+    ty = max(100, min(1000, cur_y + rng.randint(-80,  80)))
+    move_dur = _human_interval(rng, 200.0, 800.0)
     path = generate_human_path(cur_x, cur_y, tx, ty, int(move_dur), rng)
     for rel, px, py in path:
-        events.append({'Type': 'MouseMove', 'Time': t + rel, 'X': px, 'Y': py})
+        events.append(_evt('MouseMove', t + rel, px, py))
     t += move_dur
     cur_x, cur_y = tx, ty
-
-    # Tiny hover before clicking (human reaction time)
+    # Hover before clicking
     t += _human_interval(rng, 60.0, 200.0)
-
     hold = _human_interval(rng, 60.0, 260.0)
-    events.append({'Type': 'RightDown', 'Time': t,          'X': cur_x, 'Y': cur_y})
-    events.append({'Type': 'RightUp',   'Time': t + hold,   'X': cur_x, 'Y': cur_y})
+    events.append(_evt('RightDown', t,        cur_x, cur_y))
+    events.append(_evt('RightUp',   t + hold, cur_x, cur_y))
     t += hold + _human_interval(rng, 150.0, 600.0)
     return t, cur_x, cur_y
 
 
-def _add_typing(events: list, timeline: float, rng,
-                cur_x: int, cur_y: int) -> float:
-    """
-    Type a random word/phrase then erase it.
-    FIX: X/Y are integers (current cursor pos), not None — macro players need coords.
-         Each keystroke uses rng.uniform for timing (float, never rounded until save).
-    Returns new_timeline.
-    """
+def _add_typing(events, timeline, rng, cur_x, cur_y):
+    """Type a word then erase it. KeyCode = integer VK code, X/Y = None."""
     word = rng.choice(_DISTRACTION_WORDS)
-    t = timeline + _safe_gap(rng)
-
-    # Type each character
+    t    = timeline + _safe_gap(rng)
     for ch in word:
-        if ch == ' ':
-            key_code = 'Space'
-        else:
-            key_code = ch
+        vk = _VK.get(ch, _VK.get(ch.lower()))
+        if vk is None:
+            continue   # skip unmapped chars silently
         hold = _human_interval(rng, 55.0, 145.0)
-        events.append({'Type': 'KeyDown', 'Time': t,          'X': cur_x, 'Y': cur_y, 'KeyCode': key_code})
-        events.append({'Type': 'KeyUp',   'Time': t + hold,   'X': cur_x, 'Y': cur_y, 'KeyCode': key_code})
+        events.append(_evt('KeyDown', t,        keycode=vk))
+        events.append(_evt('KeyUp',   t + hold, keycode=vk))
         t += hold + _human_interval(rng, 75.0, 210.0)
-
-    # Hesitation before erasing — notice the mistake
+    # Hesitation before erasing
     t += _human_interval(rng, 200.0, 2200.0)
-
-    # Erase each character
+    bk = _VK['Back']
     for _ in word:
         hold = _human_interval(rng, 55.0, 155.0)
-        events.append({'Type': 'KeyDown', 'Time': t,          'X': cur_x, 'Y': cur_y, 'KeyCode': 'Back'})
-        events.append({'Type': 'KeyUp',   'Time': t + hold,   'X': cur_x, 'Y': cur_y, 'KeyCode': 'Back'})
+        events.append(_evt('KeyDown', t,        keycode=bk))
+        events.append(_evt('KeyUp',   t + hold, keycode=bk))
         t += hold + _human_interval(rng, 65.0, 195.0)
-
     return t
 
 
-def _add_key_spam(events: list, timeline: float, rng,
-                  cur_x: int, cur_y: int) -> float:
-    """
-    Accidentally spam a random key 2–9 times (fast, like holding the key),
-    then notice and erase with Backspace.
-    FIX: X/Y are integers (current cursor pos). Spam phase uses faster intervals
-         to mimic key-repeat (30–80ms between repeats).
-    Returns new_timeline.
-    """
-    key = rng.choice(_SPAM_KEYS)
+def _add_key_spam(events, timeline, rng, cur_x, cur_y):
+    """Spam a key 2–9×, notice, then erase. KeyCode = integer VK code."""
+    key   = rng.choice(_SPAM_KEYS)
+    vk    = _VK.get(key)
+    if vk is None:
+        return timeline   # skip if unmapped
     count = rng.randint(2, 9)
-    t = timeline + _safe_gap(rng)
-
-    # Fast spam — mimics holding key and getting key-repeat
+    t     = timeline + _safe_gap(rng)
+    bk    = _VK['Back']
     for _ in range(count):
         hold = _human_interval(rng, 35.0, 110.0)
-        events.append({'Type': 'KeyDown', 'Time': t,          'X': cur_x, 'Y': cur_y, 'KeyCode': key})
-        events.append({'Type': 'KeyUp',   'Time': t + hold,   'X': cur_x, 'Y': cur_y, 'KeyCode': key})
+        events.append(_evt('KeyDown', t,        keycode=vk))
+        events.append(_evt('KeyUp',   t + hold, keycode=vk))
         t += hold + _human_interval(rng, 25.0, 85.0)
-
-    # "Oh no" reaction pause
-    t += _human_interval(rng, 250.0, 1400.0)
-
-    # Backspace erase — slightly slower than spam (deliberate)
+    t += _human_interval(rng, 250.0, 1400.0)   # "oh no" pause
     for _ in range(count):
         hold = _human_interval(rng, 55.0, 150.0)
-        events.append({'Type': 'KeyDown', 'Time': t,          'X': cur_x, 'Y': cur_y, 'KeyCode': 'Back'})
-        events.append({'Type': 'KeyUp',   'Time': t + hold,   'X': cur_x, 'Y': cur_y, 'KeyCode': 'Back'})
+        events.append(_evt('KeyDown', t,        keycode=bk))
+        events.append(_evt('KeyUp',   t + hold, keycode=bk))
         t += hold + _human_interval(rng, 65.0, 175.0)
-
     return t
 
 
-def generate_distraction_files(distractions_src_folder: Path,
-                                out_folder: Path,
-                                rng,
+def generate_distraction_files(distractions_src_folder, out_folder, rng,
                                 count: int = 50) -> int:
     """
-    Generate `count` distraction JSON files into out_folder.
-
-    Each file:
-      • Duration: random 1–3 minutes (ms-precise float, never pre-rounded)
-      • Contents: random cursor wanders, pauses, right-clicks, typing, key-spam
-      • NO left clicks whatsoever
-      • Keyboard events carry integer X/Y (current cursor position)
-      • No two events share the exact same timestamp (safe_gap enforced)
-      • Consecutive pauses prevented (max 1 pause then must do something else)
-
-    Returns number of files actually written.
+    Generate `count` distraction files.
+    Each file uses exactly 3 randomly-chosen features from {wander, pause,
+    right_click, type, key_spam}.
+    All events follow the exact 6-field macro schema:
+      Type, Time, X, Y, Delta, KeyCode  (Delta/KeyCode None where unused)
+    KeyCode values are Windows VK integers, never strings.
+    No left clicks. Duration 1–3 min (float ms, rounded only at save).
     """
+    from pathlib import Path as _Path
+    out_folder = _Path(out_folder)
     out_folder.mkdir(parents=True, exist_ok=True)
 
-    # Rebalanced weights: right_click and type raised so all 5 actions are
-    # visible throughout every file rather than being swamped by wander/pause.
     ACTION_WEIGHTS = [
         ('wander',      22),
         ('pause',       18),
@@ -1926,73 +1904,62 @@ def generate_distraction_files(distractions_src_folder: Path,
 
     written = 0
     for i in range(count):
-        file_rng = random.Random(rng.random())   # independent seed per file
-        target_duration = file_rng.uniform(60000.0, 180000.0)   # 1–3 min
+        file_rng = random.Random(rng.random())
+        target   = file_rng.uniform(60000.0, 180000.0)
 
-        events  = []
+        # Pick exactly 3 features for this file
+        chosen     = file_rng.sample(action_names, 3)
+        chosen_wts = [w for a, w in ACTION_WEIGHTS if a in chosen]
+
+        events   = []
         timeline = 0.0
-        cur_x   = file_rng.randint(300, 700)
-        cur_y   = file_rng.randint(250, 450)
-        last_action = None   # track to prevent consecutive pauses
+        cur_x    = file_rng.randint(300, 700)
+        cur_y    = file_rng.randint(250, 450)
+        last_act = None
 
-        # Pick exactly 3 features for this file (random subset of all 5)
-        chosen_actions = file_rng.sample(action_names, 3)
-        file_action_wts = [w for a, w in ACTION_WEIGHTS if a in chosen_actions]
-
-        # Opening move to a random start position
-        tx = file_rng.randint(150, 950)
-        ty = file_rng.randint(120, 620)
+        # Opening move
+        tx       = file_rng.randint(150, 950)
+        ty       = file_rng.randint(120, 620)
         open_dur = _human_interval(file_rng, 350.0, 950.0)
-        path = generate_human_path(cur_x, cur_y, tx, ty, int(open_dur), file_rng)
+        path     = generate_human_path(cur_x, cur_y, tx, ty, int(open_dur), file_rng)
         for rel, px, py in path:
-            events.append({'Type': 'MouseMove', 'Time': timeline + rel, 'X': px, 'Y': py})
+            events.append(_evt('MouseMove', timeline + rel, px, py))
         timeline += open_dur
         cur_x, cur_y = tx, ty
 
-        while timeline < target_duration:
-            # Prevent two consecutive pauses (only relevant if pause is in the chosen set)
-            if last_action == 'pause' and 'pause' in chosen_actions:
-                candidates = [a for a in chosen_actions if a != 'pause']
-                cand_wts   = [w for a, w in ACTION_WEIGHTS if a in candidates]
-                action = file_rng.choices(candidates, weights=cand_wts, k=1)[0]
+        while timeline < target:
+            if last_act == 'pause' and 'pause' in chosen:
+                cands     = [a for a in chosen if a != 'pause']
+                cand_wts  = [w for a, w in ACTION_WEIGHTS if a in cands]
+                action    = file_rng.choices(cands, weights=cand_wts, k=1)[0]
             else:
-                action = file_rng.choices(chosen_actions, weights=file_action_wts, k=1)[0]
+                action    = file_rng.choices(chosen, weights=chosen_wts, k=1)[0]
 
             if action == 'wander':
-                timeline, cur_x, cur_y = _add_mouse_wander(
-                    events, timeline, file_rng, cur_x, cur_y)
-
+                timeline, cur_x, cur_y = _add_mouse_wander(events, timeline, file_rng, cur_x, cur_y)
             elif action == 'pause':
-                timeline, cur_x, cur_y = _add_cursor_pause(
-                    events, timeline, file_rng, cur_x, cur_y)
-
+                timeline, cur_x, cur_y = _add_cursor_pause(events, timeline, file_rng, cur_x, cur_y)
             elif action == 'right_click':
-                timeline, cur_x, cur_y = _add_right_click(
-                    events, timeline, file_rng, cur_x, cur_y)
-
+                timeline, cur_x, cur_y = _add_right_click(events, timeline, file_rng, cur_x, cur_y)
             elif action == 'type':
                 timeline = _add_typing(events, timeline, file_rng, cur_x, cur_y)
-
             elif action == 'key_spam':
                 timeline = _add_key_spam(events, timeline, file_rng, cur_x, cur_y)
 
-            last_action = action
+            last_act = action
             if timeline <= 0:
                 timeline = 1.0
 
         if not events:
             continue
 
-        # Final normalise: base at 0, round to int for JSON only now
+        # Normalise times and enforce no zero-gaps
         base = min(e['Time'] for e in events)
         for e in events:
             e['Time'] = max(0, int(round(e['Time'] - base)))
-
-        events = sorted(events, key=lambda e: e.get('Time', 0))
-
-        # Verify no zero-gaps remain
+        events.sort(key=lambda e: e['Time'])
         for j in range(1, len(events)):
-            if events[j]['Time'] == events[j-1]['Time']:
+            if events[j]['Time'] <= events[j-1]['Time']:
                 events[j]['Time'] = events[j-1]['Time'] + 1
 
         total_ms  = events[-1]['Time']
