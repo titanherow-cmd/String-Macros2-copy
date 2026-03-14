@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.18.28 - Cumulative: all v3.17.x fixes merged + v3.18.x features
+string_macros.py - v3.18.30 - Cumulative: all v3.17.x fixes merged + v3.18.x features
 - v3.17.1: Fail-fast sys.exit(1) on bad input/missing folders (was silent return)
 - v3.17.2: PRE-Play buffer bug fix — files_added counter replaces fragile
            "if cycle_events:" guard; fixes buffer skipped for always_first/last.
@@ -61,7 +61,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.28"
+VERSION = "v3.18.30"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -607,6 +607,66 @@ These features ensure files play correctly without breaking or causing errors.
       from being immediately followed by the file's first DragStart).
       Both are needed; they guard opposite sides of every transition.
     Code: add_file_to_cycle() — post_snap_gap after final snap MouseMove
+
+25. INTRA-FILE ZERO-GAP PROTECTION (Feature 25)
+    Status: ✅ ACTIVE (Always, applied to every source file on load)
+    Added: v3.18.30
+    What: Scans each source file's raw events for MouseMove → DragStart/LeftDown/
+          RightDown/Click pairs where the gap is under 15ms (virtually simultaneous
+          as recorded by the macro capture tool) and shifts the click event forward
+          to create a clean 20ms separation.
+    Problem It Solved:
+      Some recordings capture the cursor arriving at a click position and the click
+      itself within 1ms of each other (same coordinates). The macro player sees
+      these as simultaneous — it cannot distinguish "cursor moved here, THEN clicked"
+      from "both happened at once" — causing the left button to clamp and hold at
+      that position, dragging everything underneath it.
+      Example (from __20_F_53m7s.json, 34:03.908):
+        MouseMove  X=885, Y=429  t=2043908ms
+        DragStart  X=885, Y=429  t=2043909ms  ← 1ms gap = clamp!
+    Fix: For every such pair with gap in [0, 15ms), all events from the click
+         onward are shifted forward by (20 - gap) ms, creating a guaranteed
+         20ms minimum between the arrival move and the click.
+    Scope: Applied to the raw event list BEFORE any features (jitter, pauses,
+           idle movements) are added, so it never interacts with or undoes the
+           fix during later processing steps.
+    Threshold: < 15ms gap = zero-gap (recording tool resolution)
+    Target separation: 20ms (imperceptible to player, sufficient for macro player)
+    Code: add_file_to_cycle() — scan loop after filter_problematic_keys()
+    Status: ✅ ACTIVE (When distraction trigger present)
+    Added: v3.18.29
+    What: Distraction files are selected via a shuffled virtual queue — every one
+          of the 50 generated files plays before any file is reused. When all 50
+          have been inserted the queue re-shuffles and cycles again.
+    Behaviour:
+      - At generation time, the 50 files are loaded into a VirtualDistQueue
+      - Each insertion pops the next file from the shuffled queue
+      - When the queue empties it re-shuffles the full pool using the bundle RNG
+      - Guarantees maximum variety: no distraction file repeats until all others
+        have been used at least once
+    Why it matters: With ~8–14% insertion chance per folder transition and many
+      cycles, the same short file would previously appear repeatedly. Now each
+      insertion draws from a rotating pool of all 50.
+    Code: VirtualDistQueue class; dist_queue.next() in _maybe_insert_distraction()
+
+24. 2:3:7 FILE RATIO DISTRIBUTION
+    Status: ✅ ACTIVE (Always, scales with --versions)
+    Added: v3.18.29
+    What: Output files follow a 2:3:7 ratio (raw:inefficient:normal) regardless
+          of how many total versions are requested.
+    Formula:
+      raw    = max(1, round(versions × 2/12))
+      inef   = max(1, round(versions × 3/12))
+      normal = versions − raw − inef   (remainder always goes to normal)
+    Examples:
+      --versions 12  → 2 raw + 3 inef + 7 normal   (2:3:7 exact)
+      --versions 24  → 4 raw + 6 inef + 14 normal  (4:6:14 exact)
+      --versions 20  → 3 raw + 5 inef + 12 normal  (closest to 2:3:7)
+      --versions 10  → 2 raw + 2 inef + 6 normal
+      --versions 6   → 1 raw + 2 inef + 3 normal
+    Time-sensitive override: if any folder is time-sensitive, inefficient count
+      becomes 0 and all its slots are added to normal (raw count unchanged).
+    Code: VERSION DISTRIBUTION block in the per-folder version loop
 
 ═══════════════════════════════════════════════════════════════════════════
 """
@@ -1595,7 +1655,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         events = filter_problematic_keys(events)
         if not events:
             return
-        
+
+        # INTRA-FILE ZERO-GAP FIX (Feature 25)
+        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        # millisecond (or within 1-14ms) at the same coordinates. The macro player
+        # reads these as simultaneous — it can't distinguish "arrived THEN clicked"
+        # from "both at once" — causing a left-button clamp at that position.
+        # Fix: scan for any MouseMove → click-type pair with a gap < 15ms and
+        # shift the click event (and all subsequent events) forward by enough to
+        # create a clean 20ms separation. This is applied to the raw event list
+        # before any features are added so it doesn't interact with jitter/pauses.
+        _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
+        _ZERO_GAP_THRESHOLD = 15    # ms — gaps below this are "simultaneous"
+        _ZERO_GAP_TARGET    = 20    # ms — minimum clean separation to enforce
+        for _zi in range(1, len(events)):
+            if (events[_zi].get('Type') in _CLICK_TYPES
+                    and events[_zi - 1].get('Type') == 'MouseMove'):
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _ZERO_GAP_THRESHOLD:
+                    _shift = _ZERO_GAP_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
         # Check if dmwm file
         if is_dmwm:
             has_dmwm = True
@@ -1714,12 +1795,16 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                               f"[ALWAYS FIRST] {single_always_first.name}")
     
     def _maybe_insert_distraction(cur_folder_num):
-        """Roll the chance and insert one distraction file at the current timeline."""
+        """Roll the chance and insert one distraction file at the current timeline.
+        Uses VirtualDistQueue so all 50 files play before any repeats."""
         nonlocal total_distraction_pause
         if not distraction_files or distraction_chance <= 0.0:
             return
         if rng.random() < distraction_chance:
-            dist_path = rng.choice(distraction_files)
+            # distraction_files is a VirtualDistQueue when called from main()
+            dist_path = (distraction_files.next()
+                         if hasattr(distraction_files, 'next')
+                         else rng.choice(distraction_files))
             t_before  = timeline
             add_file_to_cycle(dist_path, cur_folder_num, False,
                                f"[DISTRACTION] {dist_path.name}")
@@ -2649,6 +2734,42 @@ class ManualHistoryTracker:
         
         return combination if combination else None
 
+
+class VirtualDistQueue:
+    """
+    Virtual queue for distraction file selection (Feature 23).
+    Works identically to the virtual queue used for macro file selection:
+    - All 50 distraction files are shuffled into a queue at construction
+    - Files are popped one at a time; no file repeats until ALL have been used
+    - When the queue is exhausted it re-shuffles the full pool and starts again
+    - Boundary guard: the first item of a new shuffle is never the same as
+      the last item of the previous pass, preventing cross-boundary repeats
+    - Each shuffle uses the shared rng so order varies per bundle
+    """
+    def __init__(self, files: list, rng):
+        self._pool = list(files)
+        self._rng  = rng
+        self._queue: list = []
+        self._last: object = None
+        self._refill()
+
+    def _refill(self):
+        self._queue = list(self._pool)
+        self._rng.shuffle(self._queue)
+        # Prevent cross-boundary consecutive repeat
+        if self._last is not None and len(self._queue) > 1 and self._queue[-1] == self._last:
+            # Swap the would-be-first item with a random other position
+            swap_idx = self._rng.randint(0, len(self._queue) - 2)
+            self._queue[-1], self._queue[swap_idx] = self._queue[swap_idx], self._queue[-1]
+
+    def next(self):
+        if not self._queue:
+            self._refill()
+        item = self._queue.pop()
+        self._last = item
+        return item
+
+
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -2868,14 +2989,16 @@ def main():
     import tempfile as _tempfile
     _dist_tmpdir = None
     distraction_files = []   # list of Path objects to pick from during stringing
+    dist_queue = None        # VirtualDistQueue — cycles through all files before repeating
     if distractions_src:
         print("\n" + "="*70)
         print("🎭 Generating DISTRACTION files (inline splice only, not saved to bundle)...")
         _dist_tmpdir = _tempfile.mkdtemp(prefix="string_macros_dist_")
         dist_tmp = Path(_dist_tmpdir) / "distractions"
         n_written = generate_distraction_files(distractions_src, dist_tmp, rng, count=50, bundle_id=args.bundle_id)
-        print(f"  ✅ Generated {n_written} distraction files (held in memory for insertion)")
+        print(f"  ✅ Generated {n_written} distraction files (virtual queue: no repeats until all used)")
         distraction_files = sorted(dist_tmp.glob("*.json"))
+        dist_queue = VirtualDistQueue(distraction_files, rng)
 
     # Process each folder
     for folder_data in main_folders:
@@ -2994,18 +3117,24 @@ def main():
             repeat = (idx // 26) + 1   # how many chars: 1 for 0-25, 2 for 26-51, etc.
             letter = letters[idx % 26]
             return letter * repeat
-        num_raw = 3
-        
+        # VERSION DISTRIBUTION — 2:3:7 ratio (raw:inefficient:normal)
+        # Scaled from the 12-file base using round() so it stays proportional
+        # for any --versions value, with remainder going to normal files.
+        # Time-sensitive folders replace all inefficient slots with normal.
+        _total_parts = 12  # ratio denominator
         if has_time_sensitive:
-            # Time sensitive: Replace inefficient files with normal files
-            num_inef = 0
-            num_normal = 9
-            print(f"  📊 File distribution: 3 Raw + 0 Inef + 9 Normal (instead of 3 Inef + 6 Normal)")
+            num_raw   = max(1, round(args.versions * 2 / _total_parts))
+            num_inef  = 0
+            num_normal = args.versions - num_raw
+            print(f"  📊 File distribution: {num_raw} Raw + 0 Inef + {num_normal} Normal (time sensitive — 2:0:{args.versions-num_raw} ratio)")
         else:
-            # Regular: Standard distribution
-            num_inef = 3
-            num_normal = 6
-            print(f"  📊 File distribution: 3 Raw + 3 Inef + 6 Normal (standard)")
+            num_raw   = max(1, round(args.versions * 2 / _total_parts))
+            num_inef  = max(1, round(args.versions * 3 / _total_parts))
+            num_normal = args.versions - num_raw - num_inef
+            if num_normal < 1:
+                num_normal = 1
+                num_inef = max(1, args.versions - num_raw - num_normal)
+            print(f"  📊 File distribution: {num_raw} Raw + {num_inef} Inef + {num_normal} Normal ({num_raw}:{num_inef}:{num_normal} ratio, target 2:3:7)")
         
         # CHAT INSERT: pick exactly 1 non-raw version per folder batch to receive
         # a single chat file inserted at a random midpoint in the finished strung file.
@@ -3085,7 +3214,7 @@ def main():
                     cycle_dist_chance = folder_dist_chance_normal
                 cycle_result = string_cycle(
                     subfolder_files, combo, rng, dmwm_file_set,
-                    distraction_files=distraction_files,
+                    distraction_files=dist_queue,
                     distraction_chance=cycle_dist_chance
                 )
                 
