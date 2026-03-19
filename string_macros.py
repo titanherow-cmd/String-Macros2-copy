@@ -61,7 +61,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.38"
+VERSION = "v3.18.39"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2611,6 +2611,7 @@ def scan_for_numbered_subfolders(base_path):
                     'is_end': False,
                     'is_optional_end': False,
                     'is_time_sensitive': main_folder_time_sensitive,
+                    'is_click_sensitive': main_folder_click_sensitive,
                     'always_first': always_first,
                     'always_last': always_last
                 }
