@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.18.33 - Cumulative: all v3.17.x fixes merged + v3.18.x features
+string_macros.py - v3.18.34 - Cumulative: all v3.17.x fixes merged + v3.18.x features
 - v3.17.1: Fail-fast sys.exit(1) on bad input/missing folders (was silent return)
 - v3.17.2: PRE-Play buffer bug fix — files_added counter replaces fragile
            "if cycle_events:" guard; fixes buffer skipped for always_first/last.
@@ -61,7 +61,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.33"
+VERSION = "v3.18.34"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -725,7 +725,7 @@ def parse_optional_chance(folder_name: str) -> float:
     """
     import re
     # Capture integer OR decimal number after 'optional' (e.g. 50, 50.5, 33.3)
-    match = re.search(r'optional\D{0,3}?(\d+(?:\.\d+)?)', folder_name, re.IGNORECASE)
+    match = re.search(r'optional[^-\d]*?(\d+(?:\.\d+)?)', folder_name, re.IGNORECASE)
     if match:
         pct = float(match.group(1))
         pct = max(1.0, min(99.0, pct))   # clamp to 1.0–99.0
@@ -2489,11 +2489,16 @@ def scan_for_numbered_subfolders(base_path):
             print(f"  ⚠️  Found 'Don't use features on me' folder: {len(dmwm_files)} unmodified files")
             continue
         
-        # Extract number from folder name using regex (supports decimals!)
-        # Matches: "1", "2.5", "3.14", etc.
-        match = re.search(r'\d+\.?\d*', item.name)
-        if match:
-            folder_num = float(match.group())
+        # Extract folder number — prefer explicit F<N> prefix (F1, F2, F3.5, etc.)
+        # so that other numbers in the name (e.g. 'press 1', 'optional-2-') are ignored.
+        _f_match = re.match(r'^[Ff](\d+(?:\.\d+)?)', item.name.strip())
+        if _f_match:
+            folder_num = float(_f_match.group(1))   # e.g. F3.5 → 3.5
+        else:
+            # Fall back: first number anywhere (handles '1- mine', '3.5 optional- ...')
+            _n_match = re.search(r'\d+\.?\d*', item.name)
+            folder_num = float(_n_match.group()) if _n_match else None
+        if folder_num is not None:
             all_json_files = sorted(item.glob("*.json"))
             
             # Separate "always first", "always last", and regular files
