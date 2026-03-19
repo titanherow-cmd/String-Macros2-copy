@@ -2519,7 +2519,12 @@ def scan_for_numbered_subfolders(base_path):
     # Check if MAIN FOLDER is tagged — propagates to ALL subfolders
     _base_lower = base.name.lower()
     main_folder_time_sensitive  = 'time sensitive'  in _base_lower
-    main_folder_click_sensitive = 'click sensitive' in _base_lower
+    main_folder_click_sensitive = (
+        'click sensitive'      in _base_lower or   # plain: "click sensitive"
+        'click/time sensitive' in _base_lower or   # slash: "click/time sensitive"
+        'click+time sensitive' in _base_lower or   # plus:  "click+time sensitive"
+        'click time sensitive' in _base_lower      # space: "click time sensitive"
+    )
 
     if main_folder_time_sensitive:
         print(f"  ⏱️  MAIN FOLDER is TIME SENSITIVE - All subfolders will skip inefficient files!")
