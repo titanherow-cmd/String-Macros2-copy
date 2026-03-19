@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-string_macros.py - v3.18.34 - Cumulative: all v3.17.x fixes merged + v3.18.x features
+string_macros.py - v3.18.35 - Cumulative: all v3.17.x fixes merged + v3.18.x features
 - v3.17.1: Fail-fast sys.exit(1) on bad input/missing folders (was silent return)
 - v3.17.2: PRE-Play buffer bug fix — files_added counter replaces fragile
            "if cycle_events:" guard; fixes buffer skipped for always_first/last.
@@ -61,7 +61,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.34"
+VERSION = "v3.18.35"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3424,7 +3424,7 @@ def main():
                 total_transitions += cycle_result.get('transition_total', 0)
                 total_dist_pause += cycle_result.get('distraction_pause_total', 0)
                 
-                if len(all_file_info_with_times) > 150:  # Safety limit
+                if len(all_file_info_with_times) > 2000:  # Safety limit (increased from 150)
                     break
             
             if not stringed_events:
