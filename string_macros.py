@@ -177,6 +177,13 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.44: Flat/single-subfolder always_first/last now wraps whole strung file.
+            Previously string_cycle played always_first/last on EVERY cycle call,
+            so a 50-cycle file had 50x [ALWAYS FIRST]...[ALWAYS LAST] pairs.
+            Fix: outer loop passes play_always_first=True only on cycle 0, and
+            suppresses play_always_last entirely. After the while loop, always_last
+            is injected once directly into stringed_events with a pre-play buffer.
+            Result: [ALWAYS FIRST] -> file_1 -> file_2 -> ... -> file_N -> [ALWAYS LAST]
 - v3.18.43: CRITICAL — end tag now uses word-boundary matching.
             BUG: 'end' in folder_name was a substring check. Any folder name
             containing a word with "end" in it (e.g. "click tend", "blend",
@@ -220,7 +227,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.43"
+VERSION = "v3.18.44"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1228,10 +1235,14 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
 
 def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                  distraction_files=None, distraction_chance=0.0,
-                 is_click_sensitive=False):
+                 is_click_sensitive=False,
+                 play_always_first=True, play_always_last=True):
     """
     String one complete cycle (F1 -> F2 -> F3 -> ...) into a single unit.
     Returns raw events WITHOUT anti-detection features.
+    play_always_first / play_always_last: for single-subfolder flat folders,
+    always_first/last should fire only on the very first/last cycle of the whole
+    strung file. Pass False for all but the first/last cycle respectively.
     Features will be applied to the ENTIRE cycle after.
 
     distraction_files: list of Path objects for generated distraction JSONs.
@@ -1376,8 +1387,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         only_folder_data = subfolder_files[only_folder_num]
         single_always_first = only_folder_data.get('always_first')
         single_always_last  = only_folder_data.get('always_last')
-        # Play always_first once before everything
-        if single_always_first:
+        # Play always_first only when flagged (outer loop controls first-cycle)
+        if single_always_first and play_always_first:
             is_dmwm = single_always_first in dmwm_file_set
             add_file_to_cycle(single_always_first, only_folder_num, is_dmwm,
                               f"[ALWAYS FIRST] {single_always_first.name}")
@@ -1431,7 +1442,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         last_folder_num = combination[-1][0]
         _maybe_insert_distraction(last_folder_num)
 
-    if single_subfolder and single_always_last:
+    if single_subfolder and single_always_last and play_always_last:
         is_dmwm = single_always_last in dmwm_file_set
         add_file_to_cycle(single_always_last, only_folder_num, is_dmwm,
                           f"[ALWAYS LAST] {single_always_last.name}")
@@ -2834,7 +2845,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.43"
+VERSION = "v3.18.44"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4481,10 +4492,14 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
 
 def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                  distraction_files=None, distraction_chance=0.0,
-                 is_click_sensitive=False):
+                 is_click_sensitive=False,
+                 play_always_first=True, play_always_last=True):
     """
     String one complete cycle (F1 -> F2 -> F3 -> ...) into a single unit.
     Returns raw events WITHOUT anti-detection features.
+    play_always_first / play_always_last: for single-subfolder flat folders,
+    always_first/last should fire only on the very first/last cycle of the whole
+    strung file. Pass False for all but the first/last cycle respectively.
     Features will be applied to the ENTIRE cycle after.
 
     distraction_files: list of Path objects for generated distraction JSONs.
@@ -4629,8 +4644,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         only_folder_data = subfolder_files[only_folder_num]
         single_always_first = only_folder_data.get('always_first')
         single_always_last  = only_folder_data.get('always_last')
-        # Play always_first once before everything
-        if single_always_first:
+        # Play always_first only when flagged (outer loop controls first-cycle)
+        if single_always_first and play_always_first:
             is_dmwm = single_always_first in dmwm_file_set
             add_file_to_cycle(single_always_first, only_folder_num, is_dmwm,
                               f"[ALWAYS FIRST] {single_always_first.name}")
@@ -4684,7 +4699,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         last_folder_num = combination[-1][0]
         _maybe_insert_distraction(last_folder_num)
 
-    if single_subfolder and single_always_last:
+    if single_subfolder and single_always_last and play_always_last:
         is_dmwm = single_always_last in dmwm_file_set
         add_file_to_cycle(single_always_last, only_folder_num, is_dmwm,
                           f"[ALWAYS LAST] {single_always_last.name}")
@@ -6136,6 +6151,11 @@ def main():
             total_transitions = 0
             total_dist_pause = 0   # cumulative distraction file duration inserted into this version
 
+            # For flat/single-subfolder folders, always_first fires on the FIRST cycle
+            # only and always_last fires once AFTER the whole loop.
+            _is_flat_folder = (len(subfolder_files) == 1)
+            _cycle_count = 0   # tracks which cycle we are on
+
             # INEF: reserve budget for the massive pause so the loop doesn't
             # overshoot target_ms once the pause is inserted after the loop.
             # Pre-sample the pause duration using the same formula as insert_massive_pause.
@@ -6173,12 +6193,19 @@ def main():
                     cycle_dist_chance = folder_dist_chance_inef
                 else:
                     cycle_dist_chance = folder_dist_chance_normal
+                # Flat/single-subfolder: always_first only on cycle 0,
+                # always_last suppressed here (injected once after loop ends)
+                _play_af = (not _is_flat_folder) or (_cycle_count == 0)
+                _play_al = not _is_flat_folder   # always_last injected after loop
                 cycle_result = string_cycle(
                     subfolder_files, combo, rng, dmwm_file_set,
                     distraction_files=dist_queue,
                     distraction_chance=cycle_dist_chance,
-                    is_click_sensitive=folder_is_click_sensitive
+                    is_click_sensitive=folder_is_click_sensitive,
+                    play_always_first=_play_af,
+                    play_always_last=_play_al
                 )
+                _cycle_count += 1
                 
                 cycle_events = cycle_result['events']
                 file_info = cycle_result['file_info']
@@ -6268,6 +6295,31 @@ def main():
                 if len(all_file_info_with_times) > 2000:  # Safety limit (increased from 150)
                     break
             
+            # Flat/single-subfolder: inject always_last once at the very end
+            if _is_flat_folder and stringed_events:
+                _only_fn  = next(iter(subfolder_files))
+                _only_fd  = subfolder_files[_only_fn]
+                _al_file  = _only_fd.get('always_last')
+                if _al_file:
+                    _al_events = json.load(open(_al_file, encoding='utf-8'))
+                    _al_events = filter_problematic_keys(_al_events)
+                    if _al_events:
+                        _al_base  = min(e.get('Time', 0) for e in _al_events)
+                        _al_start = stringed_events[-1]['Time'] if stringed_events else 0
+                        # Pre-play buffer before always_last
+                        _al_buf   = rng.uniform(500.0, 800.0)
+                        _al_start += _al_buf
+                        total_pre_file += _al_buf
+                        for _e in _al_events:
+                            _ne = {**_e}
+                            _ne['Time'] = _e['Time'] - _al_base + _al_start
+                            stringed_events.append(_ne)
+                        _al_end = stringed_events[-1]['Time']
+                        all_file_info_with_times.append(
+                            (_only_fn, f"[ALWAYS LAST] {_al_file.name}",
+                             _al_file in dmwm_file_set, _al_end)
+                        )
+
             if not stringed_events:
                 print(f"  [!]?  Version {v_letter}: no events built (all combos exceeded target or no valid combo) - skipping")
                 continue
