@@ -177,6 +177,15 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.43: CRITICAL — end tag now uses word-boundary matching.
+            BUG: 'end' in folder_name was a substring check. Any folder name
+            containing a word with "end" in it (e.g. "click tend", "blend",
+            "extended") was being tagged as an END folder, causing the loop to
+            stop there and skip all subsequent folders.
+            Example: "F4- use log on fire OR click tend" matched because
+            "t-END" contains "end" -> loop stopped at F4, F5 and F6 ignored.
+            FIX: changed to re.search(r'\bend\b', ...) — whole-word match only.
+            "tend" no longer matches. "end", "end-logout", "optional+end" still do.
 - v3.18.42: Two fixes:
             1. optional+end tag renamed from "optional/end" everywhere in docs,
                comments, print output, and manifest. Tag detection unchanged
@@ -211,7 +220,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.42"
+VERSION = "v3.18.43"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2086,7 +2095,7 @@ def scan_for_numbered_subfolders(base_path):
             optional_chance = parse_optional_chance(item.name) if is_optional else None
             
             # Check if folder is "end" (becomes definitive end point)
-            is_end = 'end' in item.name.lower()
+            is_end = bool(re.search(r'\bend\b', item.name, re.IGNORECASE))
             
             # Check if folder is "time sensitive" (1:1 raw:normal, no inef, minimal overhead)
             # Priority: Main folder tag > Individual subfolder tag
@@ -2825,7 +2834,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.42"
+VERSION = "v3.18.43"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5339,7 +5348,7 @@ def scan_for_numbered_subfolders(base_path):
             optional_chance = parse_optional_chance(item.name) if is_optional else None
             
             # Check if folder is "end" (becomes definitive end point)
-            is_end = 'end' in item.name.lower()
+            is_end = bool(re.search(r'\bend\b', item.name, re.IGNORECASE))
             
             # Check if folder is "time sensitive" (1:1 raw:normal, no inef, minimal overhead)
             # Priority: Main folder tag > Individual subfolder tag
