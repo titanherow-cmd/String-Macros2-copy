@@ -174,9 +174,23 @@ STRING MACROS - FEATURE LIST
     "F3 optional58-6-" = 58% chance, 1-6 files.
     "F1-4-" = always, 1-4 files.
 
+38. PROBLEMATIC KEY FILTERING
+    On load: strips keys that stop or break macro playback before stitching.
+    Filtered (no in-game use): HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34),
+                                PAUSE(19), PRINT_SCREEN(44)
+    Kept (valid in-game): ESC(27) — used for closing menus, cancelling dialogs.
+    Applied to every source file in add_file_to_cycle() before any features run.
+
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.46: ESC key (KeyCode 27) removed from filter_problematic_keys.
+            ESC was being stripped from every source file on load because macro
+            players use ESC to stop playback. However ESC is also a valid in-game
+            action (e.g. closing menus, cancelling dialogs) and must be preserved.
+            Remaining filtered keys: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34),
+            PAUSE(19), PRINT_SCREEN(44) — these have no in-game use and reliably
+            break or freeze macro playback.
 - v3.18.45: Pre-play buffer now also fires between cycles (all file types).
             ROOT CAUSE of click-through bug: add_file_to_cycle fires a 500-800ms
             buffer between files WITHIN a cycle (when files_added > 0). But at
@@ -238,7 +252,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.45"
+VERSION = "v3.18.47"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -270,9 +284,10 @@ def get_file_duration_ms(filepath):
 def filter_problematic_keys(events: list) -> list:
     """
     CRITICAL: Filter out keys that could stop macro playback.
-    Removes: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34), ESC(27), PAUSE(19), PRINT_SCREEN(44)
+    Removes: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34), PAUSE(19), PRINT_SCREEN(44)
+    NOTE: ESC(27) kept - it is a valid in-game key (e.g. closing menus).
     """
-    problematic_codes = {27, 19, 33, 34, 35, 36, 44}
+    problematic_codes = {19, 33, 34, 35, 36, 44}  # ESC(27) removed - valid in-game action
     filtered = []
     
     for event in events:
@@ -2856,7 +2871,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.45"
+VERSION = "v3.18.47"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3527,9 +3542,10 @@ def get_file_duration_ms(filepath):
 def filter_problematic_keys(events: list) -> list:
     """
     CRITICAL: Filter out keys that could stop macro playback.
-    Removes: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34), ESC(27), PAUSE(19), PRINT_SCREEN(44)
+    Removes: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34), PAUSE(19), PRINT_SCREEN(44)
+    NOTE: ESC(27) kept - it is a valid in-game key (e.g. closing menus).
     """
-    problematic_codes = {27, 19, 33, 34, 35, 36, 44}
+    problematic_codes = {19, 33, 34, 35, 36, 44}  # ESC(27) removed - valid in-game action
     filtered = []
     
     for event in events:
