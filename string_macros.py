@@ -32,7 +32,7 @@ STRING MACROS - FEATURE LIST
 
 4. INEFFICIENT MASSIVE PAUSE
    Files: Inef only
-   Value: rng.uniform(240000, 420000) ms x mult  (4-7 min base)
+   Value: rng.uniform(240000, 420000) ms  (4-7 min flat, no mult)
      x 2.0 = 8-14 min,   x 3.0 = 12-21 min
    Loop pre-samples pause to keep total file near target duration.
    Safe zones: no drag, no rapid-click, not pre-DragStart, not first/last 10%.
@@ -46,7 +46,7 @@ STRING MACROS - FEATURE LIST
      - Pre-play buffer: base 500-800ms * mult
      - Cursor transition: base 200-400ms * mult
      - Within-file pauses: file_duration * pct * (implicitly via step-3b)
-     - Massive pause: rng.uniform(240s,420s) * mult
+     - Massive pause: rng.uniform(240s,420s) flat — NO mult
      - Mid-event random pause (50% chance): rng.uniform(200,800)ms * mult
    NOT multiplied: inef before-file pause (10-30s flat), distraction files (flat)
 
@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.51"
+VERSION = "v3.18.52"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1231,7 +1231,7 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
         return events, 0, 0
     
     # Generate massive pause: 4-7 minutes (240000-420000ms) x multiplier
-    pause_duration = int(rng.uniform(240000.0, 420000.0) * mult)
+    pause_duration = int(rng.uniform(240000.0, 420000.0))  # no mult — flat 4-7 min
     
     # Detect protected ranges (rapid clicks, double-clicks)
     protected_ranges = detect_rapid_click_sequences(events)
@@ -2912,7 +2912,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.51"
+VERSION = "v3.18.52"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4520,7 +4520,7 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
         return events, 0, 0
     
     # Generate massive pause: 4-7 minutes (240000-420000ms) x multiplier
-    pause_duration = int(rng.uniform(240000.0, 420000.0) * mult)
+    pause_duration = int(rng.uniform(240000.0, 420000.0))  # no mult — flat 4-7 min
     
     # Detect protected ranges (rapid clicks, double-clicks)
     protected_ranges = detect_rapid_click_sequences(events)
@@ -6261,7 +6261,7 @@ def main():
             # Pre-sample the pause duration using the same formula as insert_massive_pause.
             # The loop uses (target_ms - massive_pause_budget) as its effective ceiling.
             if is_inef:
-                _expected_massive_ms = int(rng.uniform(240000.0, 420000.0) * mult)
+                _expected_massive_ms = int(rng.uniform(240000.0, 420000.0))  # no mult
                 _effective_target = max(target_ms - _expected_massive_ms, target_ms // 4)
             else:
                 _expected_massive_ms = 0
@@ -6437,7 +6437,7 @@ def main():
             
             # Add massive pause for INEFFICIENT
             if is_inef and len(stringed_events) > 1:
-                stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng, mult)
+                stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng)  # mult not applied
                 
                 # FIX: Update file end times that occur after the massive pause
                 if massive_pause_ms > 0 and split_idx > 0 and split_idx < len(stringed_events):
@@ -6573,10 +6573,7 @@ def main():
                 f"                - INEFFICIENT Before File Pause: {format_ms_precise(_inter_show)}",
             ]
             if _massive_show > 0:
-                massive_raw = int(_massive_show / mult) if mult > 0 else _massive_show
-                manifest_entry.append(
-                    f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(massive_raw)} (x{mult} applied = {format_ms_precise(_massive_show)})"
-                )
+                manifest_entry.append(f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(_massive_show)}")
             else:
                 manifest_entry.append(f"                - INEFFICIENT MASSIVE PAUSE: 0m 0s")
             manifest_entry.append("")
