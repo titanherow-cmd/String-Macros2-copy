@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.52"
+VERSION = "v3.18.54"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1294,7 +1294,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     
     def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
         """Helper to add a file to the cycle"""
-        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, files_added
+        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
         
         # Load events
         try:
@@ -1393,6 +1393,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     # POST-SNAP GAP
                     post_snap_gap = int(rng.uniform(80, 150))
                     timeline += post_snap_gap
+                    total_snap_gap_time += post_snap_gap
         
         # Add events from current file
         for event in events:
@@ -1416,6 +1417,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     # NEW: Track pre-file pauses, post-pause delays, cursor transitions, and distraction durations
     total_pre_pause = 0
     total_transition_time = 0
+    total_snap_gap_time = 0      # cumulative post-snap gaps (80-150ms per file transition)
     total_distraction_pause = 0  # cumulative duration of all inserted distraction files
     
     # SINGLE-SUBFOLDER MODE: if only one subfolder exists, always_first/last
@@ -1494,6 +1496,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         'has_dmwm': has_dmwm,
         'pre_pause_total': total_pre_pause,
         'transition_total': total_transition_time,
+        'snap_gap_total': total_snap_gap_time,
         'distraction_pause_total': total_distraction_pause,
     }
 
@@ -2912,7 +2915,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.52"
+VERSION = "v3.18.54"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4583,7 +4586,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     
     def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
         """Helper to add a file to the cycle"""
-        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, files_added
+        nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
         
         # Load events
         try:
@@ -4682,6 +4685,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     # POST-SNAP GAP
                     post_snap_gap = int(rng.uniform(80, 150))
                     timeline += post_snap_gap
+                    total_snap_gap_time += post_snap_gap
         
         # Add events from current file
         for event in events:
@@ -4705,6 +4709,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     # NEW: Track pre-file pauses, post-pause delays, cursor transitions, and distraction durations
     total_pre_pause = 0
     total_transition_time = 0
+    total_snap_gap_time = 0      # cumulative post-snap gaps (80-150ms per file transition)
     total_distraction_pause = 0  # cumulative duration of all inserted distraction files
     
     # SINGLE-SUBFOLDER MODE: if only one subfolder exists, always_first/last
@@ -4783,6 +4788,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         'has_dmwm': has_dmwm,
         'pre_pause_total': total_pre_pause,
         'transition_total': total_transition_time,
+        'snap_gap_total': total_snap_gap_time,
         'distraction_pause_total': total_distraction_pause,
     }
 
@@ -6249,6 +6255,7 @@ def main():
             # NEW: Track pre-file pauses, post-pause delays, cursor transitions, distraction pauses
             total_pre_file = 0
             total_transitions = 0
+            total_snap_gap = 0     # cumulative post-snap transition gaps (80-150ms each)
             total_dist_pause = 0   # cumulative distraction file duration inserted into this version
 
             # For flat/single-subfolder folders, always_first fires on the FIRST cycle
@@ -6401,6 +6408,7 @@ def main():
                 # NEW: Accumulate pre-file pause, post-pause, and transition times
                 total_pre_file += cycle_result.get('pre_pause_total', 0)
                 total_transitions += cycle_result.get('transition_total', 0)
+                total_snap_gap += cycle_result.get('snap_gap_total', 0)
                 total_dist_pause += cycle_result.get('distraction_pause_total', 0)
                 
                 if len(all_file_info_with_times) > 2000:  # Safety limit (increased from 150)
@@ -6541,21 +6549,16 @@ def main():
             
             # Compute totals for all three types
             if is_raw:
-                total_pause = total_pre_file + total_transitions
-                _intra_show = 0
-                _inter_show = 0
-                _massive_show = 0
+                _intra_show = 0; _inter_show = 0; _massive_show = 0
             elif is_inef:
                 original_inter = int(total_inter / mult) if mult > 0 else total_inter
-                total_pause = total_intra + total_pre_file + total_transitions + total_inter + massive_pause_ms + total_dist_pause
-                _intra_show = total_intra
-                _inter_show = total_inter
-                _massive_show = massive_pause_ms
+                _intra_show = total_intra; _inter_show = total_inter; _massive_show = massive_pause_ms
             else:  # normal
-                total_pause = total_intra + total_pre_file + total_transitions + total_dist_pause
-                _intra_show = total_intra
-                _inter_show = 0
-                _massive_show = 0
+                _intra_show = total_intra; _inter_show = 0; _massive_show = 0
+
+            total_pause = (total_intra + total_pre_file + total_transitions
+                           + total_snap_gap + total_dist_pause
+                           + _inter_show + _massive_show)
 
             file_type_label = "Raw" if is_raw else ("Inefficient" if is_inef else "Normal")
             manifest_entry = [
@@ -6565,18 +6568,16 @@ def main():
                 f"FILE TYPE: {file_type_label}",
                 f"  Total PAUSE ADDED: {format_ms_precise(total_pause)} (x{mult} Multiplier)",
                 "",
-                f"BREAKDOWN before multiplier:",
-                f"                - PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
-                f"                - Within File Pauses: {format_ms_precise(_intra_show)}",
-                f"                - CURSOR to Start Point: {format_ms_precise(total_transitions)}",
+                f"BREAKDOWN (x = mult applied, - = flat no mult):",
+                f"                x PRE-Play Buffer: {format_ms_precise(total_pre_file)}",
+                f"                x Within File Pauses: {format_ms_precise(_intra_show)}",
+                f"                x CURSOR to Start Point: {format_ms_precise(total_transitions)}",
+                f"                - POST-SNAP GAP: {format_ms_precise(total_snap_gap)}",
                 f"                - DISTRACTION File Pause: {format_ms_precise(total_dist_pause)}",
                 f"                - INEFFICIENT Before File Pause: {format_ms_precise(_inter_show)}",
+                f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(_massive_show)}",
+                ""
             ]
-            if _massive_show > 0:
-                manifest_entry.append(f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(_massive_show)}")
-            else:
-                manifest_entry.append(f"                - INEFFICIENT MASSIVE PAUSE: 0m 0s")
-            manifest_entry.append("")
             
             # Add file list with F#* prefix and cumulative timeline
             for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
