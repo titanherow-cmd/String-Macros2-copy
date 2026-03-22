@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.54"
+VERSION = "v3.18.55"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2915,7 +2915,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.54"
+VERSION = "v3.18.55"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6234,13 +6234,13 @@ def main():
             # e.g. Normal picks anywhere in [1.3, 1.5] so 1.31, 1.44, 1.49, etc.
             if is_raw:
                 # Raw: range 1.0 – 1.1  (e.g. 1.03, 1.07)
-                mult = round(rng.uniform(1.0, 1.1), 4)
+                mult = round(rng.uniform(1.1, 1.2), 4)
             elif is_inef:
                 # Inefficient: range 2.0 – 3.0  (e.g. 2.14, 2.87)
                 mult = round(rng.uniform(2.0, 3.0), 4)
             else:  # normal
                 # Normal: range 1.3 – 1.5  (e.g. 1.33, 1.47)
-                mult = round(rng.uniform(1.3, 1.5), 4)
+                mult = round(rng.uniform(1.5, 1.7), 4)
             
             # Build cycles until target reached
             stringed_events = []
