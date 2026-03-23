@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.55"
+VERSION = "v3.18.56"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2264,11 +2264,26 @@ def scan_for_numbered_subfolders(base_path):
                     'always_last': always_last
                 }
 
+    # Scan root-level JSON files for always_first / always_last even when
+    # numbered subfolders exist. These wrap the ENTIRE strung file once —
+    # not per cycle, not per subfolder. Separate from subfolder-level always tags.
+    root_always_first = None
+    root_always_last  = None
+    if numbered_folders:  # only meaningful when there are actual subfolders
+        for _rf in sorted(base.glob('*.json')):
+            _name = _rf.name.lower()
+            if 'always first' in _name or 'alwaysfirst' in _name:
+                root_always_first = _rf
+                print(f"  Found root-level 'always first': {_rf.name}")
+            elif 'always last' in _name or 'alwayslast' in _name:
+                root_always_last = _rf
+                print(f"  Found root-level 'always last': {_rf.name}")
+
     # Add unmodified files to their respective numbered folder pools
     # They become regular files, just tracked separately
     dmwm_file_set = set(unmodified_files)
-    
-    return numbered_folders, dmwm_file_set, non_json_files
+
+    return numbered_folders, dmwm_file_set, non_json_files, root_always_first, root_always_last
 
 # ============================================================================
 # SIMPLE PERSISTENT HISTORY (Like Bundle Counter!)
@@ -2624,7 +2639,7 @@ def main():
         if folder.name.lower() == 'distractions':
             continue
         
-        numbered_subfolders, dmwm_file_set, non_json_files = scan_for_numbered_subfolders(folder)
+        numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
         
         # Add dmwm files to the appropriate numbered folder
         for dmwm_file in dmwm_file_set:
@@ -2638,6 +2653,8 @@ def main():
             main_folders.append({
                 'path': folder,
                 'name': folder.name,
+                'root_always_first': root_always_first,
+                'root_always_last': root_always_last,
                 'subfolders': numbered_subfolders,
                 'dmwm_files': dmwm_file_set,
                 'non_json': non_json_files
@@ -2749,6 +2766,8 @@ def main():
         subfolder_files = folder_data['subfolders']
         dmwm_file_set = folder_data['dmwm_files']
         non_json_files = folder_data['non_json']
+        root_always_first = folder_data.get('root_always_first')
+        root_always_last  = folder_data.get('root_always_last')
 
         # Per-folder distraction insertion chances (float decimal, drawn once per folder):
         # - Normal files:      7.0-10.0%  (tighter window, more controlled)
@@ -2915,7 +2934,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.55"
+VERSION = "v3.18.56"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5556,11 +5575,26 @@ def scan_for_numbered_subfolders(base_path):
                     'always_last': always_last
                 }
 
+    # Scan root-level JSON files for always_first / always_last even when
+    # numbered subfolders exist. These wrap the ENTIRE strung file once —
+    # not per cycle, not per subfolder. Separate from subfolder-level always tags.
+    root_always_first = None
+    root_always_last  = None
+    if numbered_folders:  # only meaningful when there are actual subfolders
+        for _rf in sorted(base.glob('*.json')):
+            _name = _rf.name.lower()
+            if 'always first' in _name or 'alwaysfirst' in _name:
+                root_always_first = _rf
+                print(f"  Found root-level 'always first': {_rf.name}")
+            elif 'always last' in _name or 'alwayslast' in _name:
+                root_always_last = _rf
+                print(f"  Found root-level 'always last': {_rf.name}")
+
     # Add unmodified files to their respective numbered folder pools
     # They become regular files, just tracked separately
     dmwm_file_set = set(unmodified_files)
-    
-    return numbered_folders, dmwm_file_set, non_json_files
+
+    return numbered_folders, dmwm_file_set, non_json_files, root_always_first, root_always_last
 
 # ============================================================================
 # SIMPLE PERSISTENT HISTORY (Like Bundle Counter!)
@@ -5916,7 +5950,7 @@ def main():
         if folder.name.lower() == 'distractions':
             continue
         
-        numbered_subfolders, dmwm_file_set, non_json_files = scan_for_numbered_subfolders(folder)
+        numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
         
         # Add dmwm files to the appropriate numbered folder
         for dmwm_file in dmwm_file_set:
@@ -5930,6 +5964,8 @@ def main():
             main_folders.append({
                 'path': folder,
                 'name': folder.name,
+                'root_always_first': root_always_first,
+                'root_always_last': root_always_last,
                 'subfolders': numbered_subfolders,
                 'dmwm_files': dmwm_file_set,
                 'non_json': non_json_files
@@ -6041,6 +6077,8 @@ def main():
         subfolder_files = folder_data['subfolders']
         dmwm_file_set = folder_data['dmwm_files']
         non_json_files = folder_data['non_json']
+        root_always_first = folder_data.get('root_always_first')
+        root_always_last  = folder_data.get('root_always_last')
 
         # Per-folder distraction insertion chances (float decimal, drawn once per folder):
         # - Normal files:      7.0-10.0%  (tighter window, more controlled)
@@ -6274,6 +6312,27 @@ def main():
                 _expected_massive_ms = 0
                 _effective_target = target_ms
 
+            # ROOT-LEVEL always_first: play ONCE before all cycles (not per cycle)
+            if root_always_first:
+                try:
+                    _raf_events = json.load(open(root_always_first, encoding='utf-8'))
+                    _raf_events = filter_problematic_keys(_raf_events)
+                    if _raf_events:
+                        _raf_base = min(e.get('Time', 0) for e in _raf_events)
+                        for _e in _raf_events:
+                            _ne = {**_e}
+                            _ne['Time'] = _e['Time'] - _raf_base
+                            stringed_events.append(_ne)
+                        _raf_end = stringed_events[-1]['Time']
+                        all_file_info_with_times.append(
+                            (0.0, f"[ALWAYS FIRST] {root_always_first.name}",
+                             root_always_first in dmwm_file_set, _raf_end)
+                        )
+                        # Advance timeline tracker so first cycle gets proper buffer
+                        total_pre_file += rng.uniform(500.0, 800.0) * mult
+                except Exception as _e:
+                    print(f"  [!] Root always_first load error: {_e}")
+
             while True:
                 combo = tracker.get_next_combination()
                 if not combo:
@@ -6438,6 +6497,28 @@ def main():
                             (_only_fn, f"[ALWAYS LAST] {_al_file.name}",
                              _al_file in dmwm_file_set, _al_end)
                         )
+
+            # ROOT-LEVEL always_last: play ONCE after all cycles
+            if root_always_last and stringed_events:
+                try:
+                    _ral_events = json.load(open(root_always_last, encoding='utf-8'))
+                    _ral_events = filter_problematic_keys(_ral_events)
+                    if _ral_events:
+                        _ral_base  = min(e.get('Time', 0) for e in _ral_events)
+                        _ral_buf   = rng.uniform(500.0, 800.0) * mult
+                        _ral_start = stringed_events[-1]['Time'] + _ral_buf
+                        total_pre_file += _ral_buf
+                        for _e in _ral_events:
+                            _ne = {**_e}
+                            _ne['Time'] = _e['Time'] - _ral_base + _ral_start
+                            stringed_events.append(_ne)
+                        _ral_end = stringed_events[-1]['Time']
+                        all_file_info_with_times.append(
+                            (0.0, f"[ALWAYS LAST] {root_always_last.name}",
+                             root_always_last in dmwm_file_set, _ral_end)
+                        )
+                except Exception as _e:
+                    print(f"  [!] Root always_last load error: {_e}")
 
             if not stringed_events:
                 print(f"  [!]?  Version {v_letter}: no events built (all combos exceeded target or no valid combo) - skipping")
