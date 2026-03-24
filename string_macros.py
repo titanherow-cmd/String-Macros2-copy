@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.56"
+VERSION = "v3.18.57"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1452,6 +1452,40 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                                f"[DISTRACTION] {dist_path.name}")
             total_distraction_pause += (timeline - t_before)
 
+    def _play_nested(nested_item):
+        """Play a nested sub-cycle inline — F5's internal F1->F2->F3->F4 sequence."""
+        _sub_combo  = nested_item['combo']
+        _nsf        = nested_item['nested_sf']
+        _naf        = nested_item.get('nested_root_af')
+        _nal        = nested_item.get('nested_root_al')
+        # always_first for nested cycle
+        if _naf:
+            _is_dmwm = _naf in dmwm_file_set
+            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
+        # Play each sub-folder in the nested combination
+        for _sfn, _sfl in _sub_combo:
+            _sfd = _nsf.get(_sfn, {})
+            if not isinstance(_sfl, list):
+                _sfl = [_sfl]
+            _saf = _sfd.get('always_first')
+            _sal = _sfd.get('always_last')
+            if _saf:
+                _is_dmwm = _saf in dmwm_file_set
+                add_file_to_cycle(_saf, _sfn, _is_dmwm, f"[ALWAYS FIRST] {_saf.name}")
+            for _fp in _sfl:
+                if isinstance(_fp, dict) and _fp.get('_nested'):
+                    _play_nested(_fp)  # support double-nesting if ever needed
+                else:
+                    _is_dmwm = _fp in dmwm_file_set
+                    add_file_to_cycle(_fp, _sfn, _is_dmwm, _fp.name)
+            if _sal:
+                _is_dmwm = _sal in dmwm_file_set
+                add_file_to_cycle(_sal, _sfn, _is_dmwm, f"[ALWAYS LAST] {_sal.name}")
+        # always_last for nested cycle
+        if _nal:
+            _is_dmwm = _nal in dmwm_file_set
+            add_file_to_cycle(_nal, 0.0, _is_dmwm, f"[ALWAYS LAST] {_nal.name}")
+
     for idx_combo, (folder_num, file_list) in enumerate(combination):
         folder_data = subfolder_files.get(folder_num, {})
         if not isinstance(file_list, list):
@@ -1462,20 +1496,26 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
 
         if single_subfolder:
             # Single-subfolder: always_first/last already played above/below loop
-            for file_path in file_list:
-                is_dmwm = file_path in dmwm_file_set
-                add_file_to_cycle(file_path, folder_num, is_dmwm, file_path.name)
+            for item in file_list:
+                if isinstance(item, dict) and item.get('_nested'):
+                    # Nested sub-cycle — handled below
+                    _play_nested(item)
+                else:
+                    is_dmwm = item in dmwm_file_set
+                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
-            # Pattern: [ALWAYS FIRST] -> folder_files -> [ALWAYS LAST] -> next_folder -> ...
             af = folder_data.get('always_first')
             al = folder_data.get('always_last')
             if af:
                 is_dmwm = af in dmwm_file_set
                 add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
-            for file_path in file_list:
-                is_dmwm = file_path in dmwm_file_set
-                add_file_to_cycle(file_path, folder_num, is_dmwm, file_path.name)
+            for item in file_list:
+                if isinstance(item, dict) and item.get('_nested'):
+                    _play_nested(item)
+                else:
+                    is_dmwm = item in dmwm_file_set
+                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
             if al:
                 is_dmwm = al in dmwm_file_set
                 add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
@@ -2203,7 +2243,26 @@ def scan_for_numbered_subfolders(base_path):
             # "optional+end" combo: optional folder that ends loop if chosen
             is_optional_end = is_optional and is_end
 
-            if regular_files:  # Must have at least one regular file
+            # Detect nested numbered subfolders (e.g. F5 that has its own F1/F2/F3 inside)
+            nested_subfolder_files = None
+            nested_root_af = None
+            nested_root_al = None
+            if not regular_files:
+                # No direct JSON files — check if there are numbered sub-subfolders
+                _nested_subdirs = [
+                    d for d in item.iterdir()
+                    if d.is_dir() and re.search(r'^[Ff]?\d', d.name.strip())
+                ]
+                if _nested_subdirs:
+                    # Recursively scan the nested folder
+                    _nf, _nd, _nnj, _naf, _nal = scan_for_numbered_subfolders(item)
+                    if _nf:
+                        nested_subfolder_files = _nf
+                        nested_root_af = _naf
+                        nested_root_al = _nal
+                        print(f"  Nested folder detected: {item.name} has {len(_nf)} sub-folders inside")
+
+            if regular_files or nested_subfolder_files:
                 numbered_folders[folder_num] = {
                     'files': regular_files,
                     'is_optional': is_optional,
@@ -2214,12 +2273,15 @@ def scan_for_numbered_subfolders(base_path):
                     'is_click_sensitive': is_click_sensitive,
                     'max_files': parse_max_files(item.name),
                     'always_first': always_first,
-                    'always_last': always_last
+                    'always_last': always_last,
+                    'nested_subfolder_files': nested_subfolder_files,
+                    'nested_root_always_first': nested_root_af,
+                    'nested_root_always_last': nested_root_al,
                 }
-                
+
             # Also collect non-JSON files from numbered folders
             for file in item.iterdir():
-                if file.is_file() and not file.name.endswith('.json'):
+                if file.is_file() and not file.name.endswith('.' + 'json'):
                     non_json_files.append(file)
     
     # FLAT FOLDER SUPPORT:
@@ -2325,6 +2387,16 @@ class ManualHistoryTracker:
             pool = list(fd.get('files', []))
             self.rng.shuffle(pool)
             self._file_queues[fn] = pool
+
+        # Nested trackers: for subfolders that contain their own sub-subfolders,
+        # maintain a separate ManualHistoryTracker for each.
+        self._nested_trackers = {}
+        for fn, fd in self.subfolder_files.items():
+            nsf = fd.get('nested_subfolder_files')
+            if nsf:
+                self._nested_trackers[fn] = ManualHistoryTracker(
+                    nsf, self.rng, f"{self.folder_name}_nested_{fn}", self.input_dir
+                )
         
         print(f"   {len(self.used_combinations)} combinations loaded from history")
         print(f"   History folder: {self.history_dir}")
@@ -2432,16 +2504,34 @@ class ManualHistoryTracker:
                     if self.rng.random() >= optional_chance:
                         continue
                 
-                # Pick 1..max_files files from this subfolder's virtual queue
+                # Nested folder: build sub-combinations instead of picking files
+                _nsf = folder_data.get('nested_subfolder_files')
                 _max = folder_data.get('max_files', 1)
                 _n = self.rng.randint(1, _max) if _max > 1 else 1
-                _picked = []
-                for _ in range(_n):
-                    _f = self._next_file(folder_num)
-                    if _f:
-                        _picked.append(_f)
-                if _picked:
-                    combination.append((folder_num, _picked))
+                if _nsf and folder_num in self._nested_trackers:
+                    _nested_tracker = self._nested_trackers[folder_num]
+                    _picked_nested = []
+                    for _ in range(_n):
+                        _sub_combo = _nested_tracker.get_next_combination()
+                        if _sub_combo:
+                            _picked_nested.append({
+                                '_nested': True,
+                                'combo': _sub_combo,
+                                'nested_sf': _nsf,
+                                'nested_root_af': folder_data.get('nested_root_always_first'),
+                                'nested_root_al': folder_data.get('nested_root_always_last'),
+                            })
+                    if _picked_nested:
+                        combination.append((folder_num, _picked_nested))
+                else:
+                    # Regular folder: pick files from virtual queue
+                    _picked = []
+                    for _ in range(_n):
+                        _f = self._next_file(folder_num)
+                        if _f:
+                            _picked.append(_f)
+                    if _picked:
+                        combination.append((folder_num, _picked))
             
             if not combination:
                 continue
@@ -2934,7 +3024,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.56"
+VERSION = "v3.18.57"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4763,6 +4853,40 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                                f"[DISTRACTION] {dist_path.name}")
             total_distraction_pause += (timeline - t_before)
 
+    def _play_nested(nested_item):
+        """Play a nested sub-cycle inline — F5's internal F1->F2->F3->F4 sequence."""
+        _sub_combo  = nested_item['combo']
+        _nsf        = nested_item['nested_sf']
+        _naf        = nested_item.get('nested_root_af')
+        _nal        = nested_item.get('nested_root_al')
+        # always_first for nested cycle
+        if _naf:
+            _is_dmwm = _naf in dmwm_file_set
+            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
+        # Play each sub-folder in the nested combination
+        for _sfn, _sfl in _sub_combo:
+            _sfd = _nsf.get(_sfn, {})
+            if not isinstance(_sfl, list):
+                _sfl = [_sfl]
+            _saf = _sfd.get('always_first')
+            _sal = _sfd.get('always_last')
+            if _saf:
+                _is_dmwm = _saf in dmwm_file_set
+                add_file_to_cycle(_saf, _sfn, _is_dmwm, f"[ALWAYS FIRST] {_saf.name}")
+            for _fp in _sfl:
+                if isinstance(_fp, dict) and _fp.get('_nested'):
+                    _play_nested(_fp)  # support double-nesting if ever needed
+                else:
+                    _is_dmwm = _fp in dmwm_file_set
+                    add_file_to_cycle(_fp, _sfn, _is_dmwm, _fp.name)
+            if _sal:
+                _is_dmwm = _sal in dmwm_file_set
+                add_file_to_cycle(_sal, _sfn, _is_dmwm, f"[ALWAYS LAST] {_sal.name}")
+        # always_last for nested cycle
+        if _nal:
+            _is_dmwm = _nal in dmwm_file_set
+            add_file_to_cycle(_nal, 0.0, _is_dmwm, f"[ALWAYS LAST] {_nal.name}")
+
     for idx_combo, (folder_num, file_list) in enumerate(combination):
         folder_data = subfolder_files.get(folder_num, {})
         if not isinstance(file_list, list):
@@ -4773,20 +4897,26 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
 
         if single_subfolder:
             # Single-subfolder: always_first/last already played above/below loop
-            for file_path in file_list:
-                is_dmwm = file_path in dmwm_file_set
-                add_file_to_cycle(file_path, folder_num, is_dmwm, file_path.name)
+            for item in file_list:
+                if isinstance(item, dict) and item.get('_nested'):
+                    # Nested sub-cycle — handled below
+                    _play_nested(item)
+                else:
+                    is_dmwm = item in dmwm_file_set
+                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
-            # Pattern: [ALWAYS FIRST] -> folder_files -> [ALWAYS LAST] -> next_folder -> ...
             af = folder_data.get('always_first')
             al = folder_data.get('always_last')
             if af:
                 is_dmwm = af in dmwm_file_set
                 add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
-            for file_path in file_list:
-                is_dmwm = file_path in dmwm_file_set
-                add_file_to_cycle(file_path, folder_num, is_dmwm, file_path.name)
+            for item in file_list:
+                if isinstance(item, dict) and item.get('_nested'):
+                    _play_nested(item)
+                else:
+                    is_dmwm = item in dmwm_file_set
+                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
             if al:
                 is_dmwm = al in dmwm_file_set
                 add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
@@ -5514,7 +5644,26 @@ def scan_for_numbered_subfolders(base_path):
             # "optional+end" combo: optional folder that ends loop if chosen
             is_optional_end = is_optional and is_end
 
-            if regular_files:  # Must have at least one regular file
+            # Detect nested numbered subfolders (e.g. F5 that has its own F1/F2/F3 inside)
+            nested_subfolder_files = None
+            nested_root_af = None
+            nested_root_al = None
+            if not regular_files:
+                # No direct JSON files — check if there are numbered sub-subfolders
+                _nested_subdirs = [
+                    d for d in item.iterdir()
+                    if d.is_dir() and re.search(r'^[Ff]?\d', d.name.strip())
+                ]
+                if _nested_subdirs:
+                    # Recursively scan the nested folder
+                    _nf, _nd, _nnj, _naf, _nal = scan_for_numbered_subfolders(item)
+                    if _nf:
+                        nested_subfolder_files = _nf
+                        nested_root_af = _naf
+                        nested_root_al = _nal
+                        print(f"  Nested folder detected: {item.name} has {len(_nf)} sub-folders inside")
+
+            if regular_files or nested_subfolder_files:
                 numbered_folders[folder_num] = {
                     'files': regular_files,
                     'is_optional': is_optional,
@@ -5525,12 +5674,15 @@ def scan_for_numbered_subfolders(base_path):
                     'is_click_sensitive': is_click_sensitive,
                     'max_files': parse_max_files(item.name),
                     'always_first': always_first,
-                    'always_last': always_last
+                    'always_last': always_last,
+                    'nested_subfolder_files': nested_subfolder_files,
+                    'nested_root_always_first': nested_root_af,
+                    'nested_root_always_last': nested_root_al,
                 }
-                
+
             # Also collect non-JSON files from numbered folders
             for file in item.iterdir():
-                if file.is_file() and not file.name.endswith('.json'):
+                if file.is_file() and not file.name.endswith('.' + 'json'):
                     non_json_files.append(file)
     
     # FLAT FOLDER SUPPORT:
@@ -5636,6 +5788,16 @@ class ManualHistoryTracker:
             pool = list(fd.get('files', []))
             self.rng.shuffle(pool)
             self._file_queues[fn] = pool
+
+        # Nested trackers: for subfolders that contain their own sub-subfolders,
+        # maintain a separate ManualHistoryTracker for each.
+        self._nested_trackers = {}
+        for fn, fd in self.subfolder_files.items():
+            nsf = fd.get('nested_subfolder_files')
+            if nsf:
+                self._nested_trackers[fn] = ManualHistoryTracker(
+                    nsf, self.rng, f"{self.folder_name}_nested_{fn}", self.input_dir
+                )
         
         print(f"   {len(self.used_combinations)} combinations loaded from history")
         print(f"   History folder: {self.history_dir}")
@@ -5743,16 +5905,34 @@ class ManualHistoryTracker:
                     if self.rng.random() >= optional_chance:
                         continue
                 
-                # Pick 1..max_files files from this subfolder's virtual queue
+                # Nested folder: build sub-combinations instead of picking files
+                _nsf = folder_data.get('nested_subfolder_files')
                 _max = folder_data.get('max_files', 1)
                 _n = self.rng.randint(1, _max) if _max > 1 else 1
-                _picked = []
-                for _ in range(_n):
-                    _f = self._next_file(folder_num)
-                    if _f:
-                        _picked.append(_f)
-                if _picked:
-                    combination.append((folder_num, _picked))
+                if _nsf and folder_num in self._nested_trackers:
+                    _nested_tracker = self._nested_trackers[folder_num]
+                    _picked_nested = []
+                    for _ in range(_n):
+                        _sub_combo = _nested_tracker.get_next_combination()
+                        if _sub_combo:
+                            _picked_nested.append({
+                                '_nested': True,
+                                'combo': _sub_combo,
+                                'nested_sf': _nsf,
+                                'nested_root_af': folder_data.get('nested_root_always_first'),
+                                'nested_root_al': folder_data.get('nested_root_always_last'),
+                            })
+                    if _picked_nested:
+                        combination.append((folder_num, _picked_nested))
+                else:
+                    # Regular folder: pick files from virtual queue
+                    _picked = []
+                    for _ in range(_n):
+                        _f = self._next_file(folder_num)
+                        if _f:
+                            _picked.append(_f)
+                    if _picked:
+                        combination.append((folder_num, _picked))
             
             if not combination:
                 continue
