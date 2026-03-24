@@ -262,7 +262,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.57"
+VERSION = "v3.18.58"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1306,6 +1306,12 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if not events:
             return
         
+        # Capture base_time BEFORE filtering so that files where the first
+        # event is a filtered key (e.g. END key at t=90ms) keep their full
+        # original duration. Without this, base_time jumps to the first
+        # surviving event and the entire leading gap is lost.
+        base_time_pre_filter = min(e.get('Time', 0) for e in events)
+
         # Filter problematic keys only
         events = filter_problematic_keys(events)
         if not events:
@@ -1336,8 +1342,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if is_dmwm:
             has_dmwm = True
         
-        # Normalize timing
-        base_time = min(e.get('Time', 0) for e in events)
+        # Normalize timing — use pre-filter base so leading gaps are preserved
+        base_time = base_time_pre_filter
         
         # PRE-FILE PAUSE: 0.8 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
@@ -1452,17 +1458,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                                f"[DISTRACTION] {dist_path.name}")
             total_distraction_pause += (timeline - t_before)
 
-    def _play_nested(nested_item):
-        """Play a nested sub-cycle inline — F5's internal F1->F2->F3->F4 sequence."""
+    def _play_nested_loop(nested_item):
+        """Play ONE loop of the nested sub-cycle: F1->F2->F3->F4->optional.
+        AF/AL are NOT included here - they wrap ALL loops, called once by the caller."""
         _sub_combo  = nested_item['combo']
         _nsf        = nested_item['nested_sf']
-        _naf        = nested_item.get('nested_root_af')
-        _nal        = nested_item.get('nested_root_al')
-        # always_first for nested cycle
-        if _naf:
-            _is_dmwm = _naf in dmwm_file_set
-            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
-        # Play each sub-folder in the nested combination
         for _sfn, _sfl in _sub_combo:
             _sfd = _nsf.get(_sfn, {})
             if not isinstance(_sfl, list):
@@ -1474,14 +1474,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 add_file_to_cycle(_saf, _sfn, _is_dmwm, f"[ALWAYS FIRST] {_saf.name}")
             for _fp in _sfl:
                 if isinstance(_fp, dict) and _fp.get('_nested'):
-                    _play_nested(_fp)  # support double-nesting if ever needed
+                    _play_nested_loop(_fp)
                 else:
                     _is_dmwm = _fp in dmwm_file_set
                     add_file_to_cycle(_fp, _sfn, _is_dmwm, _fp.name)
             if _sal:
                 _is_dmwm = _sal in dmwm_file_set
                 add_file_to_cycle(_sal, _sfn, _is_dmwm, f"[ALWAYS LAST] {_sal.name}")
-        # always_last for nested cycle
+
+    def _play_nested_group(nested_items_list):
+        """Play all loops for a nested folder slot.
+        AF fires ONCE before all loops; AL fires ONCE after all loops.
+        Pattern: [AF] -> loop1 -> loop2 -> ... -> [AL]
+        """
+        if not nested_items_list:
+            return
+        _naf = nested_items_list[0].get('nested_root_af')
+        _nal = nested_items_list[0].get('nested_root_al')
+        if _naf:
+            _is_dmwm = _naf in dmwm_file_set
+            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
+        for _ni in nested_items_list:
+            _play_nested_loop(_ni)
         if _nal:
             _is_dmwm = _nal in dmwm_file_set
             add_file_to_cycle(_nal, 0.0, _is_dmwm, f"[ALWAYS LAST] {_nal.name}")
@@ -1494,15 +1508,18 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # DISTRACTION: maybe insert BEFORE this folder's files
         _maybe_insert_distraction(folder_num)
 
-        if single_subfolder:
+        # Separate nested dicts from regular file paths in this slot
+        _nested_items = [it for it in file_list if isinstance(it, dict) and it.get('_nested')]
+        _regular_items = [it for it in file_list if not (isinstance(it, dict) and it.get('_nested'))]
+
+        if _nested_items:
+            # Nested folder: AF once -> all loops -> AL once
+            _play_nested_group(_nested_items)
+        elif single_subfolder:
             # Single-subfolder: always_first/last already played above/below loop
-            for item in file_list:
-                if isinstance(item, dict) and item.get('_nested'):
-                    # Nested sub-cycle — handled below
-                    _play_nested(item)
-                else:
-                    is_dmwm = item in dmwm_file_set
-                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+            for item in _regular_items:
+                is_dmwm = item in dmwm_file_set
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
             af = folder_data.get('always_first')
@@ -1510,12 +1527,9 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             if af:
                 is_dmwm = af in dmwm_file_set
                 add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
-            for item in file_list:
-                if isinstance(item, dict) and item.get('_nested'):
-                    _play_nested(item)
-                else:
-                    is_dmwm = item in dmwm_file_set
-                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+            for item in _regular_items:
+                is_dmwm = item in dmwm_file_set
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
             if al:
                 is_dmwm = al in dmwm_file_set
                 add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
@@ -3024,7 +3038,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.57"
+VERSION = "v3.18.58"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4707,6 +4721,12 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if not events:
             return
         
+        # Capture base_time BEFORE filtering so that files where the first
+        # event is a filtered key (e.g. END key at t=90ms) keep their full
+        # original duration. Without this, base_time jumps to the first
+        # surviving event and the entire leading gap is lost.
+        base_time_pre_filter = min(e.get('Time', 0) for e in events)
+
         # Filter problematic keys only
         events = filter_problematic_keys(events)
         if not events:
@@ -4737,8 +4757,8 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if is_dmwm:
             has_dmwm = True
         
-        # Normalize timing
-        base_time = min(e.get('Time', 0) for e in events)
+        # Normalize timing — use pre-filter base so leading gaps are preserved
+        base_time = base_time_pre_filter
         
         # PRE-FILE PAUSE: 0.8 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
@@ -4853,17 +4873,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                                f"[DISTRACTION] {dist_path.name}")
             total_distraction_pause += (timeline - t_before)
 
-    def _play_nested(nested_item):
-        """Play a nested sub-cycle inline — F5's internal F1->F2->F3->F4 sequence."""
+    def _play_nested_loop(nested_item):
+        """Play ONE loop of the nested sub-cycle: F1->F2->F3->F4->optional.
+        AF/AL are NOT included here - they wrap ALL loops, called once by the caller."""
         _sub_combo  = nested_item['combo']
         _nsf        = nested_item['nested_sf']
-        _naf        = nested_item.get('nested_root_af')
-        _nal        = nested_item.get('nested_root_al')
-        # always_first for nested cycle
-        if _naf:
-            _is_dmwm = _naf in dmwm_file_set
-            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
-        # Play each sub-folder in the nested combination
         for _sfn, _sfl in _sub_combo:
             _sfd = _nsf.get(_sfn, {})
             if not isinstance(_sfl, list):
@@ -4875,14 +4889,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 add_file_to_cycle(_saf, _sfn, _is_dmwm, f"[ALWAYS FIRST] {_saf.name}")
             for _fp in _sfl:
                 if isinstance(_fp, dict) and _fp.get('_nested'):
-                    _play_nested(_fp)  # support double-nesting if ever needed
+                    _play_nested_loop(_fp)
                 else:
                     _is_dmwm = _fp in dmwm_file_set
                     add_file_to_cycle(_fp, _sfn, _is_dmwm, _fp.name)
             if _sal:
                 _is_dmwm = _sal in dmwm_file_set
                 add_file_to_cycle(_sal, _sfn, _is_dmwm, f"[ALWAYS LAST] {_sal.name}")
-        # always_last for nested cycle
+
+    def _play_nested_group(nested_items_list):
+        """Play all loops for a nested folder slot.
+        AF fires ONCE before all loops; AL fires ONCE after all loops.
+        Pattern: [AF] -> loop1 -> loop2 -> ... -> [AL]
+        """
+        if not nested_items_list:
+            return
+        _naf = nested_items_list[0].get('nested_root_af')
+        _nal = nested_items_list[0].get('nested_root_al')
+        if _naf:
+            _is_dmwm = _naf in dmwm_file_set
+            add_file_to_cycle(_naf, 0.0, _is_dmwm, f"[ALWAYS FIRST] {_naf.name}")
+        for _ni in nested_items_list:
+            _play_nested_loop(_ni)
         if _nal:
             _is_dmwm = _nal in dmwm_file_set
             add_file_to_cycle(_nal, 0.0, _is_dmwm, f"[ALWAYS LAST] {_nal.name}")
@@ -4895,15 +4923,18 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # DISTRACTION: maybe insert BEFORE this folder's files
         _maybe_insert_distraction(folder_num)
 
-        if single_subfolder:
+        # Separate nested dicts from regular file paths in this slot
+        _nested_items = [it for it in file_list if isinstance(it, dict) and it.get('_nested')]
+        _regular_items = [it for it in file_list if not (isinstance(it, dict) and it.get('_nested'))]
+
+        if _nested_items:
+            # Nested folder: AF once -> all loops -> AL once
+            _play_nested_group(_nested_items)
+        elif single_subfolder:
             # Single-subfolder: always_first/last already played above/below loop
-            for item in file_list:
-                if isinstance(item, dict) and item.get('_nested'):
-                    # Nested sub-cycle — handled below
-                    _play_nested(item)
-                else:
-                    is_dmwm = item in dmwm_file_set
-                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+            for item in _regular_items:
+                is_dmwm = item in dmwm_file_set
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
             af = folder_data.get('always_first')
@@ -4911,12 +4942,9 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             if af:
                 is_dmwm = af in dmwm_file_set
                 add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
-            for item in file_list:
-                if isinstance(item, dict) and item.get('_nested'):
-                    _play_nested(item)
-                else:
-                    is_dmwm = item in dmwm_file_set
-                    add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+            for item in _regular_items:
+                is_dmwm = item in dmwm_file_set
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
             if al:
                 is_dmwm = al in dmwm_file_set
                 add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
