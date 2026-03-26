@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.39
+  Current version: v3.18.59
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -13,183 +13,242 @@ STRING MACROS - FEATURE LIST
 
 1. WITHIN-FILE PAUSES
    Files: Normal + Inef (Raw = 0%)
-   Value: random range drawn fresh per file (decimal, not rounded):
+   Value: random % drawn fresh per file (decimal, never rounded):
      Normal: rng.uniform(2%, 5%)  e.g. 2.14%, 3.87%
      Inef:   rng.uniform(10%, 15%)  e.g. 11.6%, 13.2%
    e.g. 20s Normal file at 3.4% -> 0.68s pause
    One pause per file in middle 80%. Skips drags, rapid-clicks, pre-DragStart.
-   Additionally: 50% chance per cycle an extra mult-driven mid-event pause is
-   inserted at a random safe point (200-800ms * mult). See Feature 5.
 
 2. PRE-PLAY BUFFER
-   Files: ALL
-   Value: rng.uniform(500, 800) ms before every file transition. No multiplier.
+   Files: ALL (including between cycles in the outer loop)
+   Value: rng.uniform(500, 800) ms * mult — applied before every file and
+   between every cycle boundary (end of cycle N -> start of cycle N+1).
+   Between-cycle buffer was added in v3.18.45 to prevent 0ms gap between
+   the last DragEnd of one cycle and the cursor transition of the next,
+   which caused drag-click at wrong position.
 
 3. INEF BEFORE-FILE PAUSE
-   Files: Inef only, and only if current cycle >= 25s
-   Value: rng.uniform(10000, 30000) ms  (no multiplier)
+   Files: Inef only, only if current cycle >= 25s
+   Value: rng.uniform(10000, 30000) ms flat (no mult)
    Added between each full cycle (F1->...->FN loop).
+   Cursor drifts during this pause toward next file start position.
 
 4. INEFFICIENT MASSIVE PAUSE
    Files: Inef only
-   Value: rng.uniform(240000, 420000) ms  (4-7 min flat, no mult)
-     x 2.0 = 8-14 min,   x 3.0 = 12-21 min
-   Loop pre-samples pause to keep total file near target duration.
-   Safe zones: no drag, no rapid-click, not pre-DragStart, not first/last 10%.
+   Value: rng.uniform(240000, 420000) ms flat (no mult) = 4-7 min
+   One pause inserted at a safe random point after all cycles complete.
+   Loop pre-samples pause so total file stays near target duration.
+   Safe: no drag, no rapid-click, not pre-DragStart, not first/last 10%.
 
 5. MULTIPLIER SYSTEM
-   Continuous random range (decimal, not rounded):
-   Raw:    rng.uniform(1.0, 1.1)  e.g. 1.03, 1.07
-   Normal: rng.uniform(1.3, 1.5)  e.g. 1.33, 1.47
-   Inef:   rng.uniform(2.0, 3.0)  e.g. 2.14, 2.87
-   Applied to (baked in at generation time):
-     - Pre-play buffer: base 500-800ms * mult
-     - Cursor transition: base 200-400ms * mult
-     - Within-file pauses: file_duration * pct * (implicitly via step-3b)
-     - Massive pause: rng.uniform(240s,420s) flat — NO mult
-     - Mid-event random pause (50% chance): rng.uniform(200,800)ms * mult
-   NOT multiplied: inef before-file pause (10-30s flat), distraction files (flat)
+   Continuous random range, 4 decimal places (never rounded):
+     Raw:    rng.uniform(1.1, 1.2)  e.g. 1.13, 1.17
+     Normal: rng.uniform(1.5, 1.7)  e.g. 1.53, 1.67
+     Inef:   rng.uniform(2.0, 3.0)  e.g. 2.14, 2.87
+   Multiplied (baked in at generation time):
+     - Pre-play buffer: rng.uniform(500, 800) * mult
+     - Cursor transition: rng.uniform(200, 400) * mult
+     - Within-file % pause: file_duration * pct (pct not multiplied; the pause
+       duration grows with larger files naturally)
+     - Mid-event random pause (50% chance/cycle): rng.uniform(200, 800) * mult
+   NOT multiplied (flat): inef before-file pause, massive pause, distraction files
 
 ===========================================================================
                     GROUP 2: PATTERN BREAKING
 ===========================================================================
 
 6. CURSOR TRANSITION TO START POINT
-   Files: ALL  (SKIPPED for click-sensitive)
-   Value: 200-400ms human path from last pos to next file start.
+   Files: ALL (SKIPPED for click-sensitive)
+   Value: rng.uniform(200, 400) ms * mult — human path between files.
+   Skipped entirely for click-sensitive folders.
 
 7. IDLE CURSOR WANDERING
-   Files: ALL  (SKIPPED for click-sensitive)
-   Triggers on gaps > 2000ms in original recording. Inserts cursor arcs.
+   Files: ALL (SKIPPED for click-sensitive)
+   Fills existing recording gaps > 2000ms with cursor arcs/drifts.
+   Does NOT add time — movements fit inside the existing gap.
+   Not shown in manifest (zero time impact on total).
 
 8. MOUSE JITTER
-   Files: ALL  (SKIPPED for click-sensitive)
-   Value: 9-21% of mouse moves get +/-1-3px offsets.
+   Files: ALL (SKIPPED for click-sensitive)
+   Value: 9-21% of mouse moves get +/-1-3px random offsets.
    Excluded near drags, rapid-click sequences, first/last 10% of file.
 
 9. VIRTUAL QUEUE - SUBFOLDER FILES
    Each subfolder has its own shuffled queue. No file repeats until all
-   others used. Boundary guard prevents repeat at queue wrap.
+   others used. Boundary guard prevents same file at queue wrap.
+   Same mechanism applies to distraction files (Feature 32).
 
 ===========================================================================
                     GROUP 3: SMOOTH OPERATION
 ===========================================================================
 
 10. RAPID CLICK PROTECTION
-    3+ clicks in 1500ms detected. Jitter exclusion extended to 1500ms.
+    3+ clicks within 1500ms detected. Jitter exclusion extended to 1500ms.
 
 11. DRAG OPERATION PROTECTION
-    Drag sequences detected. No jitter during drag. No pause inside drag.
+    Hold+Move+Release detected. No jitter during entire drag sequence.
 
 12. EVENT TIMING INTEGRITY
     No modifications inside drags, pre-DragStart, rapid-clicks, or first/
     last 10%. Prevents click-hold clamping (unintended long drags).
 
 13. COMBINATION HISTORY
-    Tracks used file combinations per subfolder. Avoids repeating combos.
+    Tracks used file combos per subfolder across cycles.
+    Avoids repeating same combination. Persists via uploaded .txt files.
 
 14. MANUAL HISTORY UPLOAD
     Upload COMBINATION_HISTORY_XX.txt to input_macros/combination_history/
     All .txt files read; those combos avoided in future runs.
 
 15. ALPHABETICAL FILE NAMING
-    Raw: ^XX_A  Inef: XX_C (special prefix)  Normal: XX_E (no prefix)
+    Raw: ^XX_A  Inef: XX_C (not-sign prefix)  Normal: XX_E (no prefix)
     Output folder: (bundle_id) folder_name
 
 16. FOLDER-NUMBER STRUCTURE
-    F1, F2, F3.5 etc. F<N> prefix is preferred; other numbers in name ignored.
+    F1, F2, F3.5 etc. F<N> prefix preferred; other numbers in name ignored.
+    e.g. "F3- press 1 to bank" -> num=3, the "1" in name is ignored.
 
 17. OPTIONAL TAG
-    Default chance: 24-33%.  Custom: "optional58" = 58%, "optional50.5" = 50.5%
-    Max-files: "optional58-6-" = 58% chance, pick 1-6 files randomly.
+    Default chance: rng.uniform(24%, 33%) per bundle (decimal, never rounded).
+    Custom number: used as CENTRE of +/-2% random range (never rounded).
+      e.g. "optional23" -> rng.uniform(21%, 25%)
+           "optional50" -> rng.uniform(48%, 52%)
+           "optional50.5" -> rng.uniform(48.5%, 52.5%)
+    This adds variety so the same folder never hits the exact same threshold.
+    Range clamped so it never goes below 1% or above 99%.
+    Max-files/loops: "optional58-6-" = 58% centre, pick 1-6 files/loops.
     No optional: "F1-4-" = always included, pick 1-4 files.
-    always_first/last wraps whole picked group once.
+    always_first/last wraps the entire picked group once (not per file).
+    For nested folders: -N- means max N complete sub-cycles (loops), not files.
 
 18. END TAG
+    Uses word-boundary match (end) — "tend" does NOT match.
     Loop stops after this folder. Always included if reached.
 
 19. OPTIONAL+END COMBO TAG
     Chosen = loop stops here. Skipped = loop continues.
+    Renamed from "optional/end" in v3.18.42.
 
 20. TIME SENSITIVE TAG
     Ratio: 1:1 (half raw, half normal, zero inef).
-    Overhead estimator: x1.05 (tight).
-    Main folder tag propagates to all subfolders.
+    Main folder tag propagates to ALL subfolders.
 
 21. CLICK SENSITIVE TAG
-    Disables all coordinate-changing features:
+    Disables ALL coordinate-changing features:
     cursor path, mouse jitter, idle wandering, distraction insertion.
-    Main folder tag propagates to all subfolders.
+    Main folder tag propagates to ALL subfolders.
     Accepted: "click sensitive" / "click/time sensitive" / "click+time sensitive"
 
 22. CLICK/TIME SENSITIVE COMBO TAG
     Both tag rules active: 1:1 ratio + no cursor/jitter/idle/distraction.
 
 23. DONT USE FEATURES ON ME TAG
-    Files inserted completely unmodified. Marked [UNMODIFIED] in manifest.
+    Exact folder name (case-insensitive). Files inserted completely unmodified.
+    Marked [UNMODIFIED] in manifest.
 
 24. ALWAYS FIRST / LAST FILES
-    Tag in filename. Plays ONCE at start/end of whole strung cycle.
-    Works in both single and multi-subfolder modes.
+    Tag in FILENAME (not folder name). Three modes:
+    A) Root-level (next to F1/F2/F3 subfolders): fires ONCE per strung file,
+       before all cycles start and after all cycles end.
+    B) Inside a specific subfolder (e.g. F0): wraps ONLY that subfolder's files.
+       Pattern: [AF] -> F0 files -> [AL] -> F1 -> F2 -> ...
+    C) Flat/single-subfolder folder: fires ONCE at very start and very end.
+    For nested folders (Feature 39): AF/AL wrap all loops together, not per loop.
 
 25. COMPREHENSIVE MANIFEST
-    Shows: file type, multiplier, all pause breakdowns, subfolder file counts,
-    original duration (copies deduplicated), copy count, distraction pause.
+    !_MANIFEST_XX_!.txt in output folder. Shows per-version:
+    - File type, multiplier, total pause added
+    - Breakdown (x = mult applied, - = flat): PRE-Play Buffer, Within File Pauses,
+      CURSOR to Start Point, POST-SNAP GAP, DISTRACTION File Pause,
+      INEFFICIENT Before File Pause, INEFFICIENT MASSIVE PAUSE
+    - Full file list with cumulative end times
 
 26. SPECIFIC FOLDERS FILTERING
-    --specific-folders flag. Output folder: (bundle_id) folder_name
+    --specific-folders <file>: process only folders (and optionally subfolders)
+    listed in the file. Matching is case-insensitive, whitespace-stripped.
+
+    File format (one entry per line):
+      FolderName                   -> include folder, ALL its subfolders
+      FolderName: F1, F3, F4       -> include folder, ONLY subfolders F1 F3 F4
+      FolderName: F1, F3-F5        -> include folder, F1 and range F3 through F5
+
+    Examples:
+      22- Craft Dia- edge- lamp bank Z- S
+      22- Craft Dia- edge- lamp bank Z- S: F1, F2, F4
+      58- Smth R2H only: F1-F3
+
+    - Subfolder numbers are case-insensitive (F1 = f1 = 1)
+    - Decimal subfolders supported: F3.5
+    - If a requested subfolder doesn't exist, it is skipped with a warning
+    - Output folder: (bundle_id) folder_name
 
 27. CHAT INSERTS
-    --no-chat disables. One chat file in one non-raw version per batch.
+    --no-chat disables. One chat file spliced into one non-raw version
+    per folder batch at a random point in the middle third.
 
 28. PRE-PLAY BUFFER GUARANTEE
-    files_added counter (not list truthiness) ensures buffer always fires.
+    files_added int counter (not list truthiness) ensures buffer fires before
+    every file including always_first/last. Avoids Python nonlocal edge case.
 
 29. FAIL-FAST ERROR HANDLING
-    sys.exit(1) on fatal errors so GitHub Actions fails at the right step.
+    Fatal errors call sys.exit(1) so GitHub Actions fails at the right step.
 
 30. FLAT FOLDER SUPPORT
-    JSON files directly in main folder = single pool (subfolder 1.0).
-    All tags still work.
+    JSON files directly in main folder (no numbered subfolders) = single pool.
+    All tags (always_first/last, time_sensitive, click_sensitive) still work.
 
 31. DISTRACTION FILE GENERATION + INSERTION
     Trigger: DISTRACTIONS/ folder in input_macros/
-    50 temp files (30s-2min), each using 3 of 6 features:
+    Generates 50 temp files (30s-2min), each using 3 of 6 features:
     wander, pause, right-click, typing, key-spam, shapes.
     Chance: Normal 3.5-5%, Inef 3.5-7%, Raw 0%, Click-sensitive 0%.
-    Action cooldown 17-30s shown in manifest.
+    NOT multiplied — flat pre-built durations. Shown in manifest.
 
 32. VIRTUAL QUEUE - DISTRACTION FILES
-    All 50 distraction files rotate before any repeat. Boundary guard included.
+    All 50 distraction files rotate before any repeat.
+    Boundary guard prevents consecutive repeat at queue wrap.
 
 33. 2:3:7 FILE RATIO DISTRIBUTION
     raw=round(v x 2/12), inef=round(v x 3/12), normal=remainder.
-    12->2:3:7,  24->4:6:14,  20->3:5:12.
-    Time-sensitive: 1:1 raw:normal, zero inef.
+    12->2:3:7, 24->4:6:14, 20->3:5:12.
+    Time-sensitive override: 1:1 raw:normal, zero inef.
 
 34. FILE TRANSITION START GAP PROTECTION
-    80-150ms gap between snap MouseMove and first event of next file.
-    Prevents zero-gap DragStart clamp at transition.
+    80-150ms gap (POST-SNAP GAP) between snap MouseMove and first event of
+    next file. Prevents zero-gap DragStart = cursor clamp at transition.
+    Tracked in manifest as flat (no mult).
 
 35. INTRA-FILE ZERO-GAP PROTECTION
     On load: MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
+    Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
     Counts each unique filename once across all subfolders.
     Copied subfolders shown as "(N copied folder(s))" in manifest.
 
 37. MAX-FILES TAG
-    "-N-" = pick 1-N files from subfolder.
+    "-N-" in folder name = pick 1-N files (or loops for nested folders).
     "F3 optional58-6-" = 58% chance, 1-6 files.
-    "F1-4-" = always, 1-4 files.
+    "F1-4-" = always included, 1-4 files.
 
 38. PROBLEMATIC KEY FILTERING
-    On load: strips keys that stop or break macro playback before stitching.
-    Filtered (no in-game use): HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34),
-                                PAUSE(19), PRINT_SCREEN(44)
-    Kept (valid in-game): ESC(27) — used for closing menus, cancelling dialogs.
-    Applied to every source file in add_file_to_cycle() before any features run.
+    On load (before any features): strips keys that break macro playback.
+    Filtered: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34), PAUSE(19),
+              PRINT_SCREEN(44)
+    Kept: ESC(27) — valid in-game action (closing menus, cancelling dialogs).
+    IMPORTANT: base_time captured BEFORE filtering so files whose only early
+    event is a filtered key (e.g. END at t=90ms) keep their full duration.
+    Without this, the 90ms anchor is lost and the file collapses to near-zero.
+
+39. NESTED SUBFOLDER SUPPORT
+    A numbered subfolder (e.g. F5) can contain its own F1/F2/F3/F4 instead
+    of direct JSON files. Detected automatically during scanning.
+    -N- on the outer folder = max N complete inner loops (not N files).
+    always_first/last at F5's root level fire ONCE before all loops and
+    ONCE after all loops (not per loop).
+    Internal subfolders support all tags: optional, end, time/click sensitive.
+    Separate ManualHistoryTracker maintained for nested folder's combos.
 
 ===========================================================================
 
@@ -262,7 +321,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.59"
+VERSION = "v3.18.62"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -314,16 +373,17 @@ def parse_optional_chance(folder_name: str) -> float:
 
     Rules:
       - No number after 'optional'  -> random default 24.0-33.0% (float)
-      - Number found (integer OR decimal) -> clamp to [1%, 99%] and use as fixed %
+      - Number found (integer OR decimal) -> used as centre of +/-2% random range.
+        e.g. optional23 -> rng.uniform(21.0, 25.0)%
+        This adds variety so the same folder doesn't always hit the exact same
+        threshold. Range is clamped so it never goes below 1% or above 99%.
 
     Accepted formats (all case-insensitive):
       "3 optional- bank/"           -> random 0.24-0.33
-      "3 optional50- bank/"         -> 0.50
-      "3 optional50.5- bank/"       -> 0.505   ? decimal supported
-      "3 optional50%- bank/"        -> 0.50
-      "3 optional 50- bank/"        -> 0.50
-      "3 optional33.3/end- logout/" -> 0.333   ? decimal supported
-      "3 optional10/end- logout/"   -> 0.10
+      "3 optional50- bank/"         -> random 0.48-0.52
+      "3 optional50.5- bank/"       -> random 0.485-0.525
+      "3 optional23-4- booth/"      -> random 0.21-0.25
+      "3 optional33.3+end- logout/" -> random 0.313-0.353
 
     Returns a float in (0, 1).
     """
@@ -331,9 +391,10 @@ def parse_optional_chance(folder_name: str) -> float:
     # Capture integer OR decimal number after 'optional' (e.g. 50, 50.5, 33.3)
     match = re.search(r'optional[^-\d]*?(\d+(?:\.\d+)?)', folder_name, re.IGNORECASE)
     if match:
-        pct = float(match.group(1))
-        pct = max(1.0, min(99.0, pct))   # clamp to 1.0-99.0
-        return pct / 100.0
+        centre = float(match.group(1))
+        lo = max(1.0, centre - 2.0)
+        hi = min(99.0, centre + 2.0)
+        return random.uniform(lo, hi) / 100.0
     # No number -> default random range (float, never rounded)
     return random.uniform(0.24, 0.33)
 
@@ -2795,30 +2856,92 @@ def main():
         print("[X] No folders with numbered subfolders found!")
         return
     
-    # Filter by specific folders if provided
+    # Filter by specific folders (and optionally specific subfolders) if provided
+    # File format (one entry per line):
+    #   FolderName                     -> include that folder, ALL its subfolders
+    #   FolderName: F1, F3, F4         -> include that folder, ONLY listed subfolders
+    #   FolderName: F1, F3-F5          -> include that folder, subfolders F1 and F3..F5 range
+    # Matching is case-insensitive and whitespace-stripped.
     if args.specific_folders:
         try:
             with open(args.specific_folders, 'r', encoding='utf-8') as f:
-                # Read folder names, strip whitespace, ignore empty lines
-                # Split by newlines AND commas (GitHub Actions can collapse newlines to spaces/commas)
-                raw_lines = f.read().replace(',', '\n').splitlines()
-                specific_names = [name.strip() for name in raw_lines if name.strip()]
-            
-            if specific_names:
+                raw_text = f.read()
+
+            # Parse lines — each line is either "FolderName" or "FolderName: F1, F2"
+            # GitHub Actions may collapse newlines; handle commas-as-separators only
+            # when there is NO colon present (legacy behaviour).
+            entries = {}   # {folder_name_lower: set_of_subfolder_nums_or_None}
+            for raw_line in raw_text.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if ':' in line:
+                    # "FolderName: F1, F2, F3" — split on first colon only
+                    folder_part, sf_part = line.split(':', 1)
+                    folder_key = folder_part.strip().lower()
+                    # Parse subfolder numbers from "F1, F2, F3-F5" etc.
+                    sf_nums = set()
+                    for tok in re.split(r'[,\s]+', sf_part.strip()):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        # Range: F3-F5 (note: only meaningful if written as "F3-F5" not "F3,F5")
+                        range_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)-[Ff]?(\d+(?:\.\d+)?)$', tok)
+                        if range_m:
+                            lo, hi = float(range_m.group(1)), float(range_m.group(2))
+                            # Add all integer steps between lo and hi
+                            v = lo
+                            while v <= hi + 0.001:
+                                sf_nums.add(round(v, 4))
+                                v += 1.0
+                        else:
+                            # Single: F1, F3, 2, 3.5
+                            single_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)$', tok)
+                            if single_m:
+                                sf_nums.add(float(single_m.group(1)))
+                    entries[folder_key] = sf_nums if sf_nums else None
+                else:
+                    # No colon — legacy comma-separated folder names (no subfolder filter)
+                    for name in line.replace(',', '\n').splitlines():
+                        name = name.strip()
+                        if name:
+                            entries[name.lower()] = None  # None = all subfolders
+
+            if entries:
                 print(f"\n Filtering to specific folders only:")
-                for name in specific_names:
-                    print(f"  - {name}")
-                
-                # Filter main_folders to only include specified folders
+                for name, sfs in entries.items():
+                    sf_str = f" (subfolders: {sorted(sfs)})" if sfs else " (all subfolders)"
+                    print(f"  - {name}{sf_str}")
+
                 filtered_folders = []
                 for folder_data in main_folders:
-                    if folder_data['name'] in specific_names:
-                        filtered_folders.append(folder_data)
-                
+                    key = folder_data['name'].lower()
+                    if key in entries:
+                        sf_filter = entries[key]
+                        if sf_filter:
+                            # Keep only the requested numbered subfolders
+                            original_subs = folder_data['subfolders']
+                            filtered_subs = {
+                                num: data for num, data in original_subs.items()
+                                if round(num, 4) in sf_filter or num == 0  # keep dmwm (0)
+                            }
+                            if not filtered_subs:
+                                print(f"  [!] No matching subfolders found in '{folder_data['name']}'")
+                                print(f"      Requested: {sorted(sf_filter)}")
+                                print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
+                                continue
+                            # Clone folder_data with filtered subfolders
+                            filtered_fd = dict(folder_data)
+                            filtered_fd['subfolders'] = filtered_subs
+                            filtered_folders.append(filtered_fd)
+                        else:
+                            filtered_folders.append(folder_data)
+
                 if not filtered_folders:
                     print(f"\n[X] None of the specified folders were found!")
-                    print(f"   Available folders: {[f['name'] for f in main_folders]}")
-                    return
+                    print(f"   Looking for: {list(entries.keys())}")
+                    print(f"   Available:   {[f['name'] for f in main_folders]}")
+                    sys.exit(1)
                 
                 main_folders = filtered_folders
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
@@ -3038,7 +3161,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.59"
+VERSION = "v3.18.62"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3729,16 +3852,17 @@ def parse_optional_chance(folder_name: str) -> float:
 
     Rules:
       - No number after 'optional'  -> random default 24.0-33.0% (float)
-      - Number found (integer OR decimal) -> clamp to [1%, 99%] and use as fixed %
+      - Number found (integer OR decimal) -> used as centre of +/-2% random range.
+        e.g. optional23 -> rng.uniform(21.0, 25.0)%
+        This adds variety so the same folder doesn't always hit the exact same
+        threshold. Range is clamped so it never goes below 1% or above 99%.
 
     Accepted formats (all case-insensitive):
       "3 optional- bank/"           -> random 0.24-0.33
-      "3 optional50- bank/"         -> 0.50
-      "3 optional50.5- bank/"       -> 0.505   ? decimal supported
-      "3 optional50%- bank/"        -> 0.50
-      "3 optional 50- bank/"        -> 0.50
-      "3 optional33.3/end- logout/" -> 0.333   ? decimal supported
-      "3 optional10/end- logout/"   -> 0.10
+      "3 optional50- bank/"         -> random 0.48-0.52
+      "3 optional50.5- bank/"       -> random 0.485-0.525
+      "3 optional23-4- booth/"      -> random 0.21-0.25
+      "3 optional33.3+end- logout/" -> random 0.313-0.353
 
     Returns a float in (0, 1).
     """
@@ -3746,9 +3870,10 @@ def parse_optional_chance(folder_name: str) -> float:
     # Capture integer OR decimal number after 'optional' (e.g. 50, 50.5, 33.3)
     match = re.search(r'optional[^-\d]*?(\d+(?:\.\d+)?)', folder_name, re.IGNORECASE)
     if match:
-        pct = float(match.group(1))
-        pct = max(1.0, min(99.0, pct))   # clamp to 1.0-99.0
-        return pct / 100.0
+        centre = float(match.group(1))
+        lo = max(1.0, centre - 2.0)
+        hi = min(99.0, centre + 2.0)
+        return random.uniform(lo, hi) / 100.0
     # No number -> default random range (float, never rounded)
     return random.uniform(0.24, 0.33)
 
@@ -6210,30 +6335,92 @@ def main():
         print("[X] No folders with numbered subfolders found!")
         return
     
-    # Filter by specific folders if provided
+    # Filter by specific folders (and optionally specific subfolders) if provided
+    # File format (one entry per line):
+    #   FolderName                     -> include that folder, ALL its subfolders
+    #   FolderName: F1, F3, F4         -> include that folder, ONLY listed subfolders
+    #   FolderName: F1, F3-F5          -> include that folder, subfolders F1 and F3..F5 range
+    # Matching is case-insensitive and whitespace-stripped.
     if args.specific_folders:
         try:
             with open(args.specific_folders, 'r', encoding='utf-8') as f:
-                # Read folder names, strip whitespace, ignore empty lines
-                # Split by newlines AND commas (GitHub Actions can collapse newlines to spaces/commas)
-                raw_lines = f.read().replace(',', '\n').splitlines()
-                specific_names = [name.strip() for name in raw_lines if name.strip()]
-            
-            if specific_names:
+                raw_text = f.read()
+
+            # Parse lines — each line is either "FolderName" or "FolderName: F1, F2"
+            # GitHub Actions may collapse newlines; handle commas-as-separators only
+            # when there is NO colon present (legacy behaviour).
+            entries = {}   # {folder_name_lower: set_of_subfolder_nums_or_None}
+            for raw_line in raw_text.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if ':' in line:
+                    # "FolderName: F1, F2, F3" — split on first colon only
+                    folder_part, sf_part = line.split(':', 1)
+                    folder_key = folder_part.strip().lower()
+                    # Parse subfolder numbers from "F1, F2, F3-F5" etc.
+                    sf_nums = set()
+                    for tok in re.split(r'[,\s]+', sf_part.strip()):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        # Range: F3-F5 (note: only meaningful if written as "F3-F5" not "F3,F5")
+                        range_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)-[Ff]?(\d+(?:\.\d+)?)$', tok)
+                        if range_m:
+                            lo, hi = float(range_m.group(1)), float(range_m.group(2))
+                            # Add all integer steps between lo and hi
+                            v = lo
+                            while v <= hi + 0.001:
+                                sf_nums.add(round(v, 4))
+                                v += 1.0
+                        else:
+                            # Single: F1, F3, 2, 3.5
+                            single_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)$', tok)
+                            if single_m:
+                                sf_nums.add(float(single_m.group(1)))
+                    entries[folder_key] = sf_nums if sf_nums else None
+                else:
+                    # No colon — legacy comma-separated folder names (no subfolder filter)
+                    for name in line.replace(',', '\n').splitlines():
+                        name = name.strip()
+                        if name:
+                            entries[name.lower()] = None  # None = all subfolders
+
+            if entries:
                 print(f"\n Filtering to specific folders only:")
-                for name in specific_names:
-                    print(f"  - {name}")
-                
-                # Filter main_folders to only include specified folders
+                for name, sfs in entries.items():
+                    sf_str = f" (subfolders: {sorted(sfs)})" if sfs else " (all subfolders)"
+                    print(f"  - {name}{sf_str}")
+
                 filtered_folders = []
                 for folder_data in main_folders:
-                    if folder_data['name'] in specific_names:
-                        filtered_folders.append(folder_data)
-                
+                    key = folder_data['name'].lower()
+                    if key in entries:
+                        sf_filter = entries[key]
+                        if sf_filter:
+                            # Keep only the requested numbered subfolders
+                            original_subs = folder_data['subfolders']
+                            filtered_subs = {
+                                num: data for num, data in original_subs.items()
+                                if round(num, 4) in sf_filter or num == 0  # keep dmwm (0)
+                            }
+                            if not filtered_subs:
+                                print(f"  [!] No matching subfolders found in '{folder_data['name']}'")
+                                print(f"      Requested: {sorted(sf_filter)}")
+                                print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
+                                continue
+                            # Clone folder_data with filtered subfolders
+                            filtered_fd = dict(folder_data)
+                            filtered_fd['subfolders'] = filtered_subs
+                            filtered_folders.append(filtered_fd)
+                        else:
+                            filtered_folders.append(folder_data)
+
                 if not filtered_folders:
                     print(f"\n[X] None of the specified folders were found!")
-                    print(f"   Available folders: {[f['name'] for f in main_folders]}")
-                    return
+                    print(f"   Looking for: {list(entries.keys())}")
+                    print(f"   Available:   {[f['name'] for f in main_folders]}")
+                    sys.exit(1)
                 
                 main_folders = filtered_folders
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
