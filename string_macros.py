@@ -321,7 +321,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.62"
+VERSION = "v3.18.63"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2941,8 +2941,18 @@ def main():
                     print(f"\n[X] None of the specified folders were found!")
                     print(f"   Looking for: {list(entries.keys())}")
                     print(f"   Available:   {[f['name'] for f in main_folders]}")
+                    # Check if any requested name matches a SUBFOLDER name — common mistake
+                    print(f"\n   HINT: Did you mean a subfolder inside a main folder?")
+                    print(f"   Subfolder names cannot be used directly as top-level entries.")
+                    print(f"   Use the colon format to target specific subfolders:")
+                    print(f"     MainFolderName: F1, F2      <- only run F1 and F2")
+                    print(f"     MainFolderName: F1-F3       <- only run F1 through F3")
+                    print(f"     MainFolderName: F0.5        <- only run subfolder 0.5")
+                    print(f"\n   Nested subfolders (e.g. F0.5 that has its own F1/F2 inside)")
+                    print(f"   are also addressed the same way:")
+                    print(f"     22- Craft Dia: F0.5         <- run only the nested F0.5 block")
                     sys.exit(1)
-                
+
                 main_folders = filtered_folders
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
@@ -3161,7 +3171,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.62"
+VERSION = "v3.18.63"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6420,8 +6430,18 @@ def main():
                     print(f"\n[X] None of the specified folders were found!")
                     print(f"   Looking for: {list(entries.keys())}")
                     print(f"   Available:   {[f['name'] for f in main_folders]}")
+                    # Check if any requested name matches a SUBFOLDER name — common mistake
+                    print(f"\n   HINT: Did you mean a subfolder inside a main folder?")
+                    print(f"   Subfolder names cannot be used directly as top-level entries.")
+                    print(f"   Use the colon format to target specific subfolders:")
+                    print(f"     MainFolderName: F1, F2      <- only run F1 and F2")
+                    print(f"     MainFolderName: F1-F3       <- only run F1 through F3")
+                    print(f"     MainFolderName: F0.5        <- only run subfolder 0.5")
+                    print(f"\n   Nested subfolders (e.g. F0.5 that has its own F1/F2 inside)")
+                    print(f"   are also addressed the same way:")
+                    print(f"     22- Craft Dia: F0.5         <- run only the nested F0.5 block")
                     sys.exit(1)
-                
+
                 main_folders = filtered_folders
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
