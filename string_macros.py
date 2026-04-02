@@ -329,7 +329,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.74"
+VERSION = "v3.18.73"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3255,7 +3255,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.74"
+VERSION = "v3.18.73"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6985,36 +6985,6 @@ def main():
                     _cycle_gap = rng.uniform(500.0, 800.0)
                     inter_cycle_pause += int(_cycle_gap)
                     total_pre_file += _cycle_gap
-
-                    # Add cursor transition for all file types during the inter-cycle gap.
-                    # Use stringed_events[-1]['Time'] as base (after idle movements).
-                    if not is_click_sensitive:
-                        _ic_last_x, _ic_last_y = None, None
-                        for _e in reversed(stringed_events):
-                            if _e.get('X') is not None and _e.get('Y') is not None:
-                                _ic_last_x, _ic_last_y = int(_e['X']), int(_e['Y'])
-                                break
-                        _ic_first_x, _ic_first_y = None, None
-                        for _e in cycle_with_features:
-                            if _e.get('X') is not None and _e.get('Y') is not None:
-                                _ic_first_x, _ic_first_y = int(_e['X']), int(_e['Y'])
-                                break
-                        if (_ic_last_x is not None and _ic_first_x is not None
-                                and (_ic_last_x != _ic_first_x or _ic_last_y != _ic_first_y)):
-                            _ic_base = stringed_events[-1]['Time']
-                            _ic_path = generate_human_path(
-                                _ic_last_x, _ic_last_y, _ic_first_x, _ic_first_y,
-                                int(_cycle_gap), rng
-                            )
-                            for _rt, _px, _py in _ic_path[:-1]:
-                                if _rt < int(_cycle_gap):
-                                    stringed_events.append({
-                                        'Type': 'MouseMove',
-                                        'Time': _ic_base + _rt,
-                                        'X': _px, 'Y': _py
-                                    })
-                            total_transitions += int(_cycle_gap)
-
                 if stringed_events and is_inef:
                     # Check file length: Only apply if file is >= 25 seconds (25000ms)
                     file_duration = cycle_duration  # Current cycle duration in ms
@@ -7023,36 +6993,31 @@ def main():
                         # Random, not rounded, no multiplier applied
                         inter_cycle_pause = int(rng.uniform(10000.0, 30000.0))
                         total_inter += inter_cycle_pause
-
-                    # Add cursor transition during the inef pause.
-                    # IMPORTANT: use stringed_events[-1]['Time'] as base, NOT current_duration.
-                    # Idle movements (applied inside apply_cycle_features) extend stringed_events
-                    # BEYOND current_duration. Using current_duration places transition events
-                    # before the idle movements — they get buried/sorted into the idle wander
-                    # and the cursor still appears to teleport at the cycle boundary.
+                    
+                    # Add cursor transition during pause
                     last_x, last_y = None, None
                     for e in reversed(stringed_events):
                         if e.get('X') is not None and e.get('Y') is not None:
                             last_x, last_y = int(e['X']), int(e['Y'])
                             break
-
+                    
                     first_x, first_y = None, None
                     for e in cycle_with_features:
                         if e.get('X') is not None and e.get('Y') is not None:
                             first_x, first_y = int(e['X']), int(e['Y'])
                             break
-
-                    if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
-                        _trans_base = stringed_events[-1]['Time']  # after idle movements
+                    
+                    if last_x and first_x and (last_x != first_x or last_y != first_y):
                         transition_path = generate_human_path(
                             last_x, last_y, first_x, first_y,
                             inter_cycle_pause, rng
                         )
+                        
                         for rel_time, x, y in transition_path[:-1]:
                             if rel_time < inter_cycle_pause:
                                 stringed_events.append({
                                     'Type': 'MouseMove',
-                                    'Time': _trans_base + rel_time,
+                                    'Time': current_duration + rel_time,
                                     'X': x,
                                     'Y': y
                                 })
