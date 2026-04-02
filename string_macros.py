@@ -281,6 +281,21 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.78: Fixed click-sensitive flag silently falling through as False in the outer loop.
+            ROOT CAUSE: folder_is_click_sensitive was computed purely from subfolder dicts:
+              any(fd.get('is_click_sensitive', False) for fd in subfolder_files.values())
+            If the subfolder dicts lacked the flag (e.g. from an older scan code path or
+            a specific-folders filter edge case), the check returned False even for folders
+            whose name contains 'click sensitive'/'click+time sensitive' etc.
+            EFFECT: for click-sensitive folders, BOTH jitter and cursor transitions were
+            applied to cycle content when they should be suppressed. Confirmed via data:
+            57 always_first events showed ±1-3px jitter shifts, and 2 cursor transition
+            path events appeared before the always_first start in the strung file. The
+            mis-placed cursor events caused the DragStart to fire over an unexpected
+            screen position → left-click button clamp.
+            FIX: belt-and-suspenders — folder_is_click_sensitive now ALSO checks
+            folder_name directly for any click-sensitive tag (same 4 patterns as the
+            scanner). Name check || subfolder-dict check, so either alone suffices.
 - v3.18.77: Two bug fixes:
             1. NameError in inter-cycle transition block (v3.18.75 regression):
                outer loop uses 'folder_is_click_sensitive' but the block wrote
@@ -379,7 +394,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.77"
+VERSION = "v3.18.78"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3469,7 +3484,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.77"
+VERSION = "v3.18.78"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7301,8 +7316,20 @@ def main():
                 folder_combinations_used.append(combo_signature)
                 
                 # BUILD CYCLE (F1 -> F2 -> F3) WITHOUT features
-                # Folder is click-sensitive if ANY subfolder in this folder is tagged
-                folder_is_click_sensitive = any(
+                # Folder is click-sensitive if ANY subfolder in this folder is tagged,
+                # OR if the main folder name contains a click-sensitive tag.
+                # Belt-and-suspenders: check the name directly so that if the
+                # is_click_sensitive flag ever fails to propagate through the subfolder
+                # dicts (e.g. after specific-folders filtering), the feature is still
+                # correctly suppressed for all cycles in this folder.
+                _fn_lower = folder_name.lower()
+                _name_click_sensitive = (
+                    'click sensitive'      in _fn_lower or
+                    'click/time sensitive' in _fn_lower or
+                    'click+time sensitive' in _fn_lower or
+                    'click time sensitive' in _fn_lower
+                )
+                folder_is_click_sensitive = _name_click_sensitive or any(
                     fd.get('is_click_sensitive', False)
                     for fd in subfolder_files.values()
                 )
