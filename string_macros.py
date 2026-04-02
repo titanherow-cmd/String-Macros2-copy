@@ -281,6 +281,15 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.77: Two bug fixes:
+            1. NameError in inter-cycle transition block (v3.18.75 regression):
+               outer loop uses 'folder_is_click_sensitive' but the block wrote
+               'is_click_sensitive' (the parameter name inside string_cycle).
+               Fixed: changed to 'folder_is_click_sensitive' in the outer loop.
+            2. LOGOUT wait time was identical across runs for the same bundle ID
+               because _lo_rng was seeded with (bundle_id + 31337). Changed to
+               random.Random() (unseeded, system entropy) so every run produces
+               a genuinely different wait duration for the idle file.
 - v3.18.76: New Feature 40 — LOGOUT sequence folder ('LOGOUT, wait, in').
             Replaces the static '- logout.json' file with a strung 3-file
             sequence: proper logout -> idle wait (1min-3hrs random) -> relogin.
@@ -370,7 +379,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.76"
+VERSION = "v3.18.77"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2993,7 +3002,7 @@ def main():
 
     if _logout_folder:
         print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random(args.bundle_id + 31337)
+        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
         _lo_dest = Path(args.output_root) / "- logout.json"
         _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
         if _built:
@@ -3460,7 +3469,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.76"
+VERSION = "v3.18.77"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6713,7 +6722,7 @@ def main():
 
     if _logout_folder:
         print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random(args.bundle_id + 31337)
+        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
         _lo_dest = Path(args.output_root) / "- logout.json"
         _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
         if _built:
@@ -7360,7 +7369,7 @@ def main():
                     # which covers the full 10-30s pause with a slow drift. Running both blocks
                     # would: (1) move cursor to destination immediately in block 1, then (2) find
                     # distance≈0 in block 2, generating no drift at all during the long pause.
-                    if not is_click_sensitive and not is_inef:
+                    if not folder_is_click_sensitive and not is_inef:
                         _ic_last_x, _ic_last_y = None, None
                         for _e in reversed(stringed_events):
                             if _e.get('X') is not None and _e.get('Y') is not None:
