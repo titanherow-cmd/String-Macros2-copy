@@ -258,9 +258,50 @@ STRING MACROS - FEATURE LIST
     Internal subfolders support all tags: optional, end, time/click sensitive.
     Separate ManualHistoryTracker maintained for nested folder's combos.
 
+40. LOGOUT SEQUENCE FOLDER (Feature 40)
+    Trigger: folder named 'LOGOUT, wait, in' (case-insensitive) at the root
+    level of input_macros/.
+    Contents: exactly 3 .json files identified by keyword in filename:
+      - File containing 'proper'  → slot 1: actual logout actions
+      - File containing 'nothing' → slot 2: idle wait period
+      - File containing 'relogin' → slot 3: re-login actions
+    Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
+                     500-800ms buffer → slot3
+    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
+                 Float value, never rounded — full millisecond precision.
+    Features: NO anti-detection features applied (files inserted raw).
+              filter_problematic_keys() is applied on load.
+    Output: written to output_root/- logout.json, then copied to each
+            bundle folder as "@ N LOGOUT.JSON" (same as static logout file).
+    Priority: takes precedence over the legacy '- logout.json' static file.
+    Fallback: if the folder is missing, the old static file search still runs.
+    The folder is excluded from the main macro scan (not treated as a macro folder).
+    Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
+
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.76: New Feature 40 — LOGOUT sequence folder ('LOGOUT, wait, in').
+            Replaces the static '- logout.json' file with a strung 3-file
+            sequence: proper logout -> idle wait (1min-3hrs random) -> relogin.
+            build_logout_sequence() function added (both copies). Detection
+            runs before the main scan; LOGOUT folder is skipped in scan loop.
+            Uses a dedicated rng (bundle_id + 31337) seeded independently.
+- v3.18.75: Fixed two inter-cycle cursor transition bugs causing teleports between cycles.
+            BUG 1 (all non-click-sensitive types): Block-1 ran for inef files AND for
+            raw/normal. For inef, it immediately moved the cursor to the destination in
+            ~500-800ms. Block-2 then found distance≈0 between last and first positions
+            → generate_human_path returned a single point → path[:-1] was empty → zero
+            drift events during the 10-30s inef pause. The teleport was still visible
+            at the start of the next cycle.
+            FIX: Block-1 now skips inef files (`and not is_inef`). Inef transition is
+            handled entirely by block-2 which covers the full 10-30s with a slow drift.
+            BUG 2 (inef only): Block-2 used `_trans_base = stringed_events[-1]['Time']`.
+            When idle-movement events extended stringed_events beyond current_duration,
+            this base was too late — drift events started mid-pause and the last ones
+            landed past the next cycle's content start, overlapping after sort.
+            FIX: Block-2 now uses `_trans_base = current_duration` — the true end of
+            the previous cycle's content — anchoring the drift exactly at the boundary.
 - v3.18.46: ESC key (KeyCode 27) removed from filter_problematic_keys.
             ESC was being stripped from every source file on load because macro
             players use ESC to stop playback. However ESC is also a valid in-game
@@ -329,13 +370,13 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.73"
+VERSION = "v3.18.76"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
 # ============================================================================
 
-# ============================================================================
+
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -2717,6 +2758,143 @@ class VirtualDistQueue:
         return item
 
 
+
+
+# ============================================================================
+# LOGOUT SEQUENCE BUILDER (Feature 40)
+# ============================================================================
+
+def build_logout_sequence(folder_path, rng, out_path):
+    """
+    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
+
+    Expected files inside the folder (matched by keyword in filename,
+    case-insensitive):
+      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
+      - filename contains 'nothing' -> slot 2: idle file, receives random wait
+      - filename contains 'relogin' -> slot 3: re-login actions (played last)
+
+    Stringing order:
+      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
+           -> pre-play buffer (500-800 ms) -> slot3
+
+    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
+                 Float, never rounded — full millisecond precision.
+
+    No anti-detection features applied. filter_problematic_keys() runs on load.
+    Writes to out_path; caller should name it '- logout.json' so the existing
+    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
+
+    Returns out_path on success, None on failure.
+    """
+    json_files = sorted(folder_path.glob('*.json'))
+    if not json_files:
+        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
+        return None
+
+    # Identify the three slots by keyword in filename
+    slot1 = slot2 = slot3 = None
+    for f in json_files:
+        n = f.name.lower()
+        if 'proper' in n:
+            slot1 = f
+        elif 'nothing' in n:
+            slot2 = f
+        elif 'relogin' in n:
+            slot3 = f
+
+    missing = []
+    if slot1 is None:
+        missing.append("slot-1 logout (filename must contain 'proper')")
+    if slot2 is None:
+        missing.append("slot-2 wait (filename must contain 'nothing')")
+    if slot3 is None:
+        missing.append("slot-3 login (filename must contain 'relogin')")
+    if missing:
+        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
+        print(f"      Found files: {[f.name for f in json_files]}")
+        print(f"      Logout skipped.")
+        return None
+
+    # Load and normalise each file (time base = 0)
+    def _load(path):
+        try:
+            events = json.load(open(path, encoding='utf-8'))
+        except Exception as exc:
+            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
+            return None
+        if not events:
+            return None
+        events = filter_problematic_keys(events)
+        if not events:
+            return None
+        base = min(e.get('Time', 0) for e in events)
+        return [{**e, 'Time': e['Time'] - base} for e in events]
+
+    e1 = _load(slot1)
+    e2 = _load(slot2)
+    e3 = _load(slot3)
+
+    if not e1 or not e2 or not e3:
+        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
+        return None
+
+    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
+    merged   = []
+    timeline = 0.0
+
+    # Slot 1
+    dur1 = max(e.get('Time', 0) for e in e1)
+    for e in e1:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur1
+
+    # Pre-play buffer 1->2
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 2
+    dur2 = max(e.get('Time', 0) for e in e2)
+    for e in e2:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur2
+
+    # Random wait: 1 minute to 3 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    timeline += random_wait_ms
+
+    # Pre-play buffer 2->3
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 3
+    dur3 = max(e.get('Time', 0) for e in e3)
+    for e in e3:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur3
+
+    # Finalise: round times to int, sort
+    for e in merged:
+        e['Time'] = max(0, int(round(e['Time'])))
+    merged.sort(key=lambda e: e.get('Time', 0))
+
+    # Write to disk
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(merged, separators=(',', ':')))
+    except Exception as exc:
+        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
+        return None
+
+    total_min  = int(timeline / 60000)
+    total_sec  = int((timeline % 60000) / 1000)
+    wait_min   = int(random_wait_ms / 60000)
+    wait_sec   = int((random_wait_ms % 60000) / 1000)
+    print(f"  Built LOGOUT sequence:")
+    print(f"    1. {slot1.name}")
+    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
+    print(f"    3. {slot3.name}")
+    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
+    return out_path
+
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -2801,22 +2979,44 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # Look for logout file
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
+    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
+    # build_logout_sequence() strings its 3 files and writes the result to
+    # output_root/- logout.json, which the copy block below picks up unchanged.
+    # Falls back to the old static '- logout.json' search if the folder is absent.
     logout_file = None
-    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
-    for location_dir in [search_base, search_base.parent]:
-        if logout_file:
+    _logout_folder = None
+    for _d in search_base.iterdir():
+        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
+            _logout_folder = _d
             break
-        for pattern in logout_patterns:
-            test_file = location_dir / pattern
-            for test_path in [test_file, Path(str(test_file) + ".json")]:
-                if test_path.exists() and test_path.is_file():
-                    logout_file = test_path
-                    print(f"? Found logout file: {logout_file.name}")
-                    break
-    
+
+    if _logout_folder:
+        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
+        _lo_rng  = random.Random(args.bundle_id + 31337)
+        _lo_dest = Path(args.output_root) / "- logout.json"
+        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
+        if _built:
+            logout_file = _built
+        else:
+            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+    else:
+        # Fallback: look for a static logout .json at root level
+        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
+                           "logout", "- logout", "-logout"]
+        for location_dir in [search_base, search_base.parent]:
+            if logout_file:
+                break
+            for pattern in logout_patterns:
+                test_file = location_dir / pattern
+                for test_path in [test_file, Path(str(test_file) + ".json")]:
+                    if test_path.exists() and test_path.is_file():
+                        logout_file = test_path
+                        print(f"? Found logout file: {logout_file.name}")
+                        break
+
     print()
-    
+
     # Scan folders
     main_folders = []
     for folder in search_base.iterdir():
@@ -2826,6 +3026,11 @@ def main():
         # Skip the DISTRACTIONS source folder - it is not a macro folder,
         # only the generated output copy goes into the bundle.
         if folder.name.lower() == 'distractions':
+            continue
+
+        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
+        # before the scan loop; should not be treated as a macro folder.
+        if folder.name.lower() == 'logout, wait, in':
             continue
         
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
@@ -3255,7 +3460,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.73"
+VERSION = "v3.18.76"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6273,6 +6478,143 @@ class VirtualDistQueue:
         return item
 
 
+
+
+# ============================================================================
+# LOGOUT SEQUENCE BUILDER (Feature 40)
+# ============================================================================
+
+def build_logout_sequence(folder_path, rng, out_path):
+    """
+    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
+
+    Expected files inside the folder (matched by keyword in filename,
+    case-insensitive):
+      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
+      - filename contains 'nothing' -> slot 2: idle file, receives random wait
+      - filename contains 'relogin' -> slot 3: re-login actions (played last)
+
+    Stringing order:
+      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
+           -> pre-play buffer (500-800 ms) -> slot3
+
+    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
+                 Float, never rounded — full millisecond precision.
+
+    No anti-detection features applied. filter_problematic_keys() runs on load.
+    Writes to out_path; caller should name it '- logout.json' so the existing
+    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
+
+    Returns out_path on success, None on failure.
+    """
+    json_files = sorted(folder_path.glob('*.json'))
+    if not json_files:
+        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
+        return None
+
+    # Identify the three slots by keyword in filename
+    slot1 = slot2 = slot3 = None
+    for f in json_files:
+        n = f.name.lower()
+        if 'proper' in n:
+            slot1 = f
+        elif 'nothing' in n:
+            slot2 = f
+        elif 'relogin' in n:
+            slot3 = f
+
+    missing = []
+    if slot1 is None:
+        missing.append("slot-1 logout (filename must contain 'proper')")
+    if slot2 is None:
+        missing.append("slot-2 wait (filename must contain 'nothing')")
+    if slot3 is None:
+        missing.append("slot-3 login (filename must contain 'relogin')")
+    if missing:
+        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
+        print(f"      Found files: {[f.name for f in json_files]}")
+        print(f"      Logout skipped.")
+        return None
+
+    # Load and normalise each file (time base = 0)
+    def _load(path):
+        try:
+            events = json.load(open(path, encoding='utf-8'))
+        except Exception as exc:
+            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
+            return None
+        if not events:
+            return None
+        events = filter_problematic_keys(events)
+        if not events:
+            return None
+        base = min(e.get('Time', 0) for e in events)
+        return [{**e, 'Time': e['Time'] - base} for e in events]
+
+    e1 = _load(slot1)
+    e2 = _load(slot2)
+    e3 = _load(slot3)
+
+    if not e1 or not e2 or not e3:
+        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
+        return None
+
+    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
+    merged   = []
+    timeline = 0.0
+
+    # Slot 1
+    dur1 = max(e.get('Time', 0) for e in e1)
+    for e in e1:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur1
+
+    # Pre-play buffer 1->2
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 2
+    dur2 = max(e.get('Time', 0) for e in e2)
+    for e in e2:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur2
+
+    # Random wait: 1 minute to 3 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    timeline += random_wait_ms
+
+    # Pre-play buffer 2->3
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 3
+    dur3 = max(e.get('Time', 0) for e in e3)
+    for e in e3:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur3
+
+    # Finalise: round times to int, sort
+    for e in merged:
+        e['Time'] = max(0, int(round(e['Time'])))
+    merged.sort(key=lambda e: e.get('Time', 0))
+
+    # Write to disk
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(merged, separators=(',', ':')))
+    except Exception as exc:
+        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
+        return None
+
+    total_min  = int(timeline / 60000)
+    total_sec  = int((timeline % 60000) / 1000)
+    wait_min   = int(random_wait_ms / 60000)
+    wait_sec   = int((random_wait_ms % 60000) / 1000)
+    print(f"  Built LOGOUT sequence:")
+    print(f"    1. {slot1.name}")
+    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
+    print(f"    3. {slot3.name}")
+    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
+    return out_path
+
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -6357,22 +6699,44 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # Look for logout file
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
+    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
+    # build_logout_sequence() strings its 3 files and writes the result to
+    # output_root/- logout.json, which the copy block below picks up unchanged.
+    # Falls back to the old static '- logout.json' search if the folder is absent.
     logout_file = None
-    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
-    for location_dir in [search_base, search_base.parent]:
-        if logout_file:
+    _logout_folder = None
+    for _d in search_base.iterdir():
+        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
+            _logout_folder = _d
             break
-        for pattern in logout_patterns:
-            test_file = location_dir / pattern
-            for test_path in [test_file, Path(str(test_file) + ".json")]:
-                if test_path.exists() and test_path.is_file():
-                    logout_file = test_path
-                    print(f"? Found logout file: {logout_file.name}")
-                    break
-    
+
+    if _logout_folder:
+        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
+        _lo_rng  = random.Random(args.bundle_id + 31337)
+        _lo_dest = Path(args.output_root) / "- logout.json"
+        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
+        if _built:
+            logout_file = _built
+        else:
+            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+    else:
+        # Fallback: look for a static logout .json at root level
+        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
+                           "logout", "- logout", "-logout"]
+        for location_dir in [search_base, search_base.parent]:
+            if logout_file:
+                break
+            for pattern in logout_patterns:
+                test_file = location_dir / pattern
+                for test_path in [test_file, Path(str(test_file) + ".json")]:
+                    if test_path.exists() and test_path.is_file():
+                        logout_file = test_path
+                        print(f"? Found logout file: {logout_file.name}")
+                        break
+
     print()
-    
+
     # Scan folders
     main_folders = []
     for folder in search_base.iterdir():
@@ -6382,6 +6746,11 @@ def main():
         # Skip the DISTRACTIONS source folder - it is not a macro folder,
         # only the generated output copy goes into the bundle.
         if folder.name.lower() == 'distractions':
+            continue
+
+        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
+        # before the scan loop; should not be treated as a macro folder.
+        if folder.name.lower() == 'logout, wait, in':
             continue
         
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
@@ -6985,6 +7354,39 @@ def main():
                     _cycle_gap = rng.uniform(500.0, 800.0)
                     inter_cycle_pause += int(_cycle_gap)
                     total_pre_file += _cycle_gap
+
+                    # Add cursor transition for raw/normal file types during the inter-cycle gap.
+                    # Inef skips this block — its transition is handled below in the inef block,
+                    # which covers the full 10-30s pause with a slow drift. Running both blocks
+                    # would: (1) move cursor to destination immediately in block 1, then (2) find
+                    # distance≈0 in block 2, generating no drift at all during the long pause.
+                    if not is_click_sensitive and not is_inef:
+                        _ic_last_x, _ic_last_y = None, None
+                        for _e in reversed(stringed_events):
+                            if _e.get('X') is not None and _e.get('Y') is not None:
+                                _ic_last_x, _ic_last_y = int(_e['X']), int(_e['Y'])
+                                break
+                        _ic_first_x, _ic_first_y = None, None
+                        for _e in cycle_with_features:
+                            if _e.get('X') is not None and _e.get('Y') is not None:
+                                _ic_first_x, _ic_first_y = int(_e['X']), int(_e['Y'])
+                                break
+                        if (_ic_last_x is not None and _ic_first_x is not None
+                                and (_ic_last_x != _ic_first_x or _ic_last_y != _ic_first_y)):
+                            _ic_base = stringed_events[-1]['Time']
+                            _ic_path = generate_human_path(
+                                _ic_last_x, _ic_last_y, _ic_first_x, _ic_first_y,
+                                int(_cycle_gap), rng
+                            )
+                            for _rt, _px, _py in _ic_path[:-1]:
+                                if _rt < int(_cycle_gap):
+                                    stringed_events.append({
+                                        'Type': 'MouseMove',
+                                        'Time': _ic_base + _rt,
+                                        'X': _px, 'Y': _py
+                                    })
+                            total_transitions += int(_cycle_gap)
+
                 if stringed_events and is_inef:
                     # Check file length: Only apply if file is >= 25 seconds (25000ms)
                     file_duration = cycle_duration  # Current cycle duration in ms
@@ -6993,31 +7395,39 @@ def main():
                         # Random, not rounded, no multiplier applied
                         inter_cycle_pause = int(rng.uniform(10000.0, 30000.0))
                         total_inter += inter_cycle_pause
-                    
-                    # Add cursor transition during pause
+
+                    # Add slow cursor drift covering the full inef pause.
+                    # FIX (v3.18.75): _trans_base uses current_duration (real end of previous
+                    # cycle content), not stringed_events[-1]['Time']. The old code pointed to
+                    # the tail of any idle-movement events that extend beyond current_duration,
+                    # causing drift events to start late and overlap with the next cycle after
+                    # sort. Using current_duration anchors the drift correctly at the cycle
+                    # boundary. Block-1 is now skipped for inef (see above), so
+                    # stringed_events[-1] is still at current_duration when we arrive here —
+                    # but using current_duration explicitly is safer and self-documenting.
                     last_x, last_y = None, None
                     for e in reversed(stringed_events):
                         if e.get('X') is not None and e.get('Y') is not None:
                             last_x, last_y = int(e['X']), int(e['Y'])
                             break
-                    
+
                     first_x, first_y = None, None
                     for e in cycle_with_features:
                         if e.get('X') is not None and e.get('Y') is not None:
                             first_x, first_y = int(e['X']), int(e['Y'])
                             break
-                    
-                    if last_x and first_x and (last_x != first_x or last_y != first_y):
+
+                    if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
+                        _trans_base = current_duration  # FIX: anchor at cycle boundary, not after idle events
                         transition_path = generate_human_path(
                             last_x, last_y, first_x, first_y,
                             inter_cycle_pause, rng
                         )
-                        
                         for rel_time, x, y in transition_path[:-1]:
                             if rel_time < inter_cycle_pause:
                                 stringed_events.append({
                                     'Type': 'MouseMove',
-                                    'Time': current_duration + rel_time,
+                                    'Time': _trans_base + rel_time,
                                     'X': x,
                                     'Y': y
                                 })
