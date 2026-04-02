@@ -227,12 +227,8 @@ STRING MACROS - FEATURE LIST
     Tracked in manifest as flat (no mult).
 
 35. INTRA-FILE ZERO-GAP PROTECTION
-    On load: two checks, both shift all events from the click forward.
-    Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
+    On load: MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
-    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
-    Prevents too-fast re-press sequences where the macro player cannot
-    distinguish a genuine release+re-click from a single held drag.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -262,86 +258,9 @@ STRING MACROS - FEATURE LIST
     Internal subfolders support all tags: optional, end, time/click sensitive.
     Separate ManualHistoryTracker maintained for nested folder's combos.
 
-40. LOGOUT SEQUENCE FOLDER (Feature 40)
-    Trigger: folder named 'LOGOUT, wait, in' (case-insensitive) at the root
-    level of input_macros/.
-    Contents: exactly 3 .json files identified by keyword in filename:
-      - File containing 'proper'  → slot 1: actual logout actions
-      - File containing 'nothing' → slot 2: idle wait period
-      - File containing 'relogin' → slot 3: re-login actions
-    Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
-                     500-800ms buffer → slot3
-    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
-                 Float value, never rounded — full millisecond precision.
-    Features: NO anti-detection features applied (files inserted raw).
-              filter_problematic_keys() is applied on load.
-    Output: written to output_root/- logout.json, then copied to each
-            bundle folder as "@ N LOGOUT.JSON" (same as static logout file).
-    Priority: takes precedence over the legacy '- logout.json' static file.
-    Fallback: if the folder is missing, the old static file search still runs.
-    The folder is excluded from the main macro scan (not treated as a macro folder).
-    Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
-
 ===========================================================================
 
 CHANGELOG (recent):
-- v3.18.79: Extended intra-file zero-gap fix (Feature 25) with Part B:
-            DragEnd -> DragStart pairs with a gap under 150ms are now shifted
-            to enforce a 200ms minimum separation.
-            ROOT CAUSE: source recordings contain rapid drag re-presses (52-130ms
-            apart, always at identical coordinates). The macro player cannot
-            distinguish a genuine button release + re-click from a single held
-            drag in that time window, causing left-button clamp.
-            Part A (MouseMove -> click-type < 15ms → 20ms) is unchanged.
-            Part B is a second independent loop that runs after Part A on the
-            same raw event list, before any features are applied.
-            Confirmed: strung file had 16 DragEnd->DragStart pairs under 150ms
-            (min 52ms); all are caught and shifted by Part B.
-- v3.18.78: Fixed click-sensitive flag silently falling through as False in the outer loop.
-            ROOT CAUSE: folder_is_click_sensitive was computed purely from subfolder dicts:
-              any(fd.get('is_click_sensitive', False) for fd in subfolder_files.values())
-            If the subfolder dicts lacked the flag (e.g. from an older scan code path or
-            a specific-folders filter edge case), the check returned False even for folders
-            whose name contains 'click sensitive'/'click+time sensitive' etc.
-            EFFECT: for click-sensitive folders, BOTH jitter and cursor transitions were
-            applied to cycle content when they should be suppressed. Confirmed via data:
-            57 always_first events showed ±1-3px jitter shifts, and 2 cursor transition
-            path events appeared before the always_first start in the strung file. The
-            mis-placed cursor events caused the DragStart to fire over an unexpected
-            screen position → left-click button clamp.
-            FIX: belt-and-suspenders — folder_is_click_sensitive now ALSO checks
-            folder_name directly for any click-sensitive tag (same 4 patterns as the
-            scanner). Name check || subfolder-dict check, so either alone suffices.
-- v3.18.77: Two bug fixes:
-            1. NameError in inter-cycle transition block (v3.18.75 regression):
-               outer loop uses 'folder_is_click_sensitive' but the block wrote
-               'is_click_sensitive' (the parameter name inside string_cycle).
-               Fixed: changed to 'folder_is_click_sensitive' in the outer loop.
-            2. LOGOUT wait time was identical across runs for the same bundle ID
-               because _lo_rng was seeded with (bundle_id + 31337). Changed to
-               random.Random() (unseeded, system entropy) so every run produces
-               a genuinely different wait duration for the idle file.
-- v3.18.76: New Feature 40 — LOGOUT sequence folder ('LOGOUT, wait, in').
-            Replaces the static '- logout.json' file with a strung 3-file
-            sequence: proper logout -> idle wait (1min-3hrs random) -> relogin.
-            build_logout_sequence() function added (both copies). Detection
-            runs before the main scan; LOGOUT folder is skipped in scan loop.
-            Uses a dedicated rng (bundle_id + 31337) seeded independently.
-- v3.18.75: Fixed two inter-cycle cursor transition bugs causing teleports between cycles.
-            BUG 1 (all non-click-sensitive types): Block-1 ran for inef files AND for
-            raw/normal. For inef, it immediately moved the cursor to the destination in
-            ~500-800ms. Block-2 then found distance≈0 between last and first positions
-            → generate_human_path returned a single point → path[:-1] was empty → zero
-            drift events during the 10-30s inef pause. The teleport was still visible
-            at the start of the next cycle.
-            FIX: Block-1 now skips inef files (`and not is_inef`). Inef transition is
-            handled entirely by block-2 which covers the full 10-30s with a slow drift.
-            BUG 2 (inef only): Block-2 used `_trans_base = stringed_events[-1]['Time']`.
-            When idle-movement events extended stringed_events beyond current_duration,
-            this base was too late — drift events started mid-pause and the last ones
-            landed past the next cycle's content start, overlapping after sort.
-            FIX: Block-2 now uses `_trans_base = current_duration` — the true end of
-            the previous cycle's content — anchoring the drift exactly at the boundary.
 - v3.18.46: ESC key (KeyCode 27) removed from filter_problematic_keys.
             ESC was being stripped from every source file on load because macro
             players use ESC to stop playback. However ESC is also a valid in-game
@@ -410,13 +329,13 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.79"
+VERSION = "v3.18.74"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
 # ============================================================================
 
-
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -1477,28 +1396,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             return
 
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Two separate checks, both shift the DragStart (and all events after it)
-        # forward to enforce a minimum gap:
-        #
-        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
-        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        #   millisecond (or within 1-14ms). The macro player reads these as
-        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
-        #   once" - causing a left-button clamp at that position.
-        #   Threshold: 15ms  |  Target separation: 20ms
-        #
-        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
-        #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
-        #   The macro player doesn't have enough time to register a genuine button
-        #   release and re-press — it reads the pair as a single continuous hold,
-        #   causing the left-button to clamp. 150ms was chosen because it covers
-        #   all observed problem pairs (52-130ms) with headroom; human re-click
-        #   reactions are typically 200ms+, so 200ms target is imperceptible.
-        #   Threshold: 150ms  |  Target separation: 200ms
+        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        # millisecond (or within 1-14ms) at the same coordinates. The macro player
+        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
+        # from "both at once" - causing a left-button clamp at that position.
+        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
+        # shift the click event (and all subsequent events) forward by enough to
+        # create a clean 20ms separation. This is applied to the raw event list
+        # before any features are added so it doesn't interact with jitter/pauses.
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
-
-        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -1507,18 +1413,6 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _ZERO_GAP_THRESHOLD:
                     _shift = _ZERO_GAP_TARGET - _gap
-                    for _j in range(_zi, len(events)):
-                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
-
-        # Part B: DragEnd -> DragStart too-fast re-press
-        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
-        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
-        for _zi in range(1, len(events)):
-            if (events[_zi].get('Type') == 'DragStart'
-                    and events[_zi - 1].get('Type') == 'DragEnd'):
-                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
-                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
-                    _shift = _DRAG_REPRESS_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
@@ -2823,143 +2717,6 @@ class VirtualDistQueue:
         return item
 
 
-
-
-# ============================================================================
-# LOGOUT SEQUENCE BUILDER (Feature 40)
-# ============================================================================
-
-def build_logout_sequence(folder_path, rng, out_path):
-    """
-    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
-
-    Expected files inside the folder (matched by keyword in filename,
-    case-insensitive):
-      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
-      - filename contains 'nothing' -> slot 2: idle file, receives random wait
-      - filename contains 'relogin' -> slot 3: re-login actions (played last)
-
-    Stringing order:
-      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
-           -> pre-play buffer (500-800 ms) -> slot3
-
-    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
-                 Float, never rounded — full millisecond precision.
-
-    No anti-detection features applied. filter_problematic_keys() runs on load.
-    Writes to out_path; caller should name it '- logout.json' so the existing
-    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
-
-    Returns out_path on success, None on failure.
-    """
-    json_files = sorted(folder_path.glob('*.json'))
-    if not json_files:
-        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
-        return None
-
-    # Identify the three slots by keyword in filename
-    slot1 = slot2 = slot3 = None
-    for f in json_files:
-        n = f.name.lower()
-        if 'proper' in n:
-            slot1 = f
-        elif 'nothing' in n:
-            slot2 = f
-        elif 'relogin' in n:
-            slot3 = f
-
-    missing = []
-    if slot1 is None:
-        missing.append("slot-1 logout (filename must contain 'proper')")
-    if slot2 is None:
-        missing.append("slot-2 wait (filename must contain 'nothing')")
-    if slot3 is None:
-        missing.append("slot-3 login (filename must contain 'relogin')")
-    if missing:
-        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
-        print(f"      Found files: {[f.name for f in json_files]}")
-        print(f"      Logout skipped.")
-        return None
-
-    # Load and normalise each file (time base = 0)
-    def _load(path):
-        try:
-            events = json.load(open(path, encoding='utf-8'))
-        except Exception as exc:
-            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
-            return None
-        if not events:
-            return None
-        events = filter_problematic_keys(events)
-        if not events:
-            return None
-        base = min(e.get('Time', 0) for e in events)
-        return [{**e, 'Time': e['Time'] - base} for e in events]
-
-    e1 = _load(slot1)
-    e2 = _load(slot2)
-    e3 = _load(slot3)
-
-    if not e1 or not e2 or not e3:
-        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
-        return None
-
-    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
-    merged   = []
-    timeline = 0.0
-
-    # Slot 1
-    dur1 = max(e.get('Time', 0) for e in e1)
-    for e in e1:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur1
-
-    # Pre-play buffer 1->2
-    timeline += rng.uniform(500.0, 800.0)
-
-    # Slot 2
-    dur2 = max(e.get('Time', 0) for e in e2)
-    for e in e2:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur2
-
-    # Random wait: 1 minute to 3 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(60000.0, 10800000.0)
-    timeline += random_wait_ms
-
-    # Pre-play buffer 2->3
-    timeline += rng.uniform(500.0, 800.0)
-
-    # Slot 3
-    dur3 = max(e.get('Time', 0) for e in e3)
-    for e in e3:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur3
-
-    # Finalise: round times to int, sort
-    for e in merged:
-        e['Time'] = max(0, int(round(e['Time'])))
-    merged.sort(key=lambda e: e.get('Time', 0))
-
-    # Write to disk
-    try:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(merged, separators=(',', ':')))
-    except Exception as exc:
-        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
-        return None
-
-    total_min  = int(timeline / 60000)
-    total_sec  = int((timeline % 60000) / 1000)
-    wait_min   = int(random_wait_ms / 60000)
-    wait_sec   = int((random_wait_ms % 60000) / 1000)
-    print(f"  Built LOGOUT sequence:")
-    print(f"    1. {slot1.name}")
-    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
-    print(f"    3. {slot3.name}")
-    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
-    return out_path
-
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -3044,44 +2801,22 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
-    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
-    # build_logout_sequence() strings its 3 files and writes the result to
-    # output_root/- logout.json, which the copy block below picks up unchanged.
-    # Falls back to the old static '- logout.json' search if the folder is absent.
+    # Look for logout file
     logout_file = None
-    _logout_folder = None
-    for _d in search_base.iterdir():
-        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
-            _logout_folder = _d
+    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
+    for location_dir in [search_base, search_base.parent]:
+        if logout_file:
             break
-
-    if _logout_folder:
-        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout.json"
-        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
-        if _built:
-            logout_file = _built
-        else:
-            print(f"  [!] LOGOUT folder build failed — no logout file this run")
-    else:
-        # Fallback: look for a static logout .json at root level
-        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
-                           "logout", "- logout", "-logout"]
-        for location_dir in [search_base, search_base.parent]:
-            if logout_file:
-                break
-            for pattern in logout_patterns:
-                test_file = location_dir / pattern
-                for test_path in [test_file, Path(str(test_file) + ".json")]:
-                    if test_path.exists() and test_path.is_file():
-                        logout_file = test_path
-                        print(f"? Found logout file: {logout_file.name}")
-                        break
-
+        for pattern in logout_patterns:
+            test_file = location_dir / pattern
+            for test_path in [test_file, Path(str(test_file) + ".json")]:
+                if test_path.exists() and test_path.is_file():
+                    logout_file = test_path
+                    print(f"? Found logout file: {logout_file.name}")
+                    break
+    
     print()
-
+    
     # Scan folders
     main_folders = []
     for folder in search_base.iterdir():
@@ -3091,11 +2826,6 @@ def main():
         # Skip the DISTRACTIONS source folder - it is not a macro folder,
         # only the generated output copy goes into the bundle.
         if folder.name.lower() == 'distractions':
-            continue
-
-        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
-        # before the scan loop; should not be treated as a macro folder.
-        if folder.name.lower() == 'logout, wait, in':
             continue
         
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
@@ -3525,7 +3255,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.79"
+VERSION = "v3.18.74"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5222,28 +4952,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             return
 
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Two separate checks, both shift the DragStart (and all events after it)
-        # forward to enforce a minimum gap:
-        #
-        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
-        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        #   millisecond (or within 1-14ms). The macro player reads these as
-        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
-        #   once" - causing a left-button clamp at that position.
-        #   Threshold: 15ms  |  Target separation: 20ms
-        #
-        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
-        #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
-        #   The macro player doesn't have enough time to register a genuine button
-        #   release and re-press — it reads the pair as a single continuous hold,
-        #   causing the left-button to clamp. 150ms was chosen because it covers
-        #   all observed problem pairs (52-130ms) with headroom; human re-click
-        #   reactions are typically 200ms+, so 200ms target is imperceptible.
-        #   Threshold: 150ms  |  Target separation: 200ms
+        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        # millisecond (or within 1-14ms) at the same coordinates. The macro player
+        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
+        # from "both at once" - causing a left-button clamp at that position.
+        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
+        # shift the click event (and all subsequent events) forward by enough to
+        # create a clean 20ms separation. This is applied to the raw event list
+        # before any features are added so it doesn't interact with jitter/pauses.
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
-
-        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -5252,18 +4969,6 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _ZERO_GAP_THRESHOLD:
                     _shift = _ZERO_GAP_TARGET - _gap
-                    for _j in range(_zi, len(events)):
-                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
-
-        # Part B: DragEnd -> DragStart too-fast re-press
-        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
-        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
-        for _zi in range(1, len(events)):
-            if (events[_zi].get('Type') == 'DragStart'
-                    and events[_zi - 1].get('Type') == 'DragEnd'):
-                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
-                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
-                    _shift = _DRAG_REPRESS_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
@@ -6568,143 +6273,6 @@ class VirtualDistQueue:
         return item
 
 
-
-
-# ============================================================================
-# LOGOUT SEQUENCE BUILDER (Feature 40)
-# ============================================================================
-
-def build_logout_sequence(folder_path, rng, out_path):
-    """
-    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
-
-    Expected files inside the folder (matched by keyword in filename,
-    case-insensitive):
-      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
-      - filename contains 'nothing' -> slot 2: idle file, receives random wait
-      - filename contains 'relogin' -> slot 3: re-login actions (played last)
-
-    Stringing order:
-      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
-           -> pre-play buffer (500-800 ms) -> slot3
-
-    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
-                 Float, never rounded — full millisecond precision.
-
-    No anti-detection features applied. filter_problematic_keys() runs on load.
-    Writes to out_path; caller should name it '- logout.json' so the existing
-    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
-
-    Returns out_path on success, None on failure.
-    """
-    json_files = sorted(folder_path.glob('*.json'))
-    if not json_files:
-        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
-        return None
-
-    # Identify the three slots by keyword in filename
-    slot1 = slot2 = slot3 = None
-    for f in json_files:
-        n = f.name.lower()
-        if 'proper' in n:
-            slot1 = f
-        elif 'nothing' in n:
-            slot2 = f
-        elif 'relogin' in n:
-            slot3 = f
-
-    missing = []
-    if slot1 is None:
-        missing.append("slot-1 logout (filename must contain 'proper')")
-    if slot2 is None:
-        missing.append("slot-2 wait (filename must contain 'nothing')")
-    if slot3 is None:
-        missing.append("slot-3 login (filename must contain 'relogin')")
-    if missing:
-        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
-        print(f"      Found files: {[f.name for f in json_files]}")
-        print(f"      Logout skipped.")
-        return None
-
-    # Load and normalise each file (time base = 0)
-    def _load(path):
-        try:
-            events = json.load(open(path, encoding='utf-8'))
-        except Exception as exc:
-            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
-            return None
-        if not events:
-            return None
-        events = filter_problematic_keys(events)
-        if not events:
-            return None
-        base = min(e.get('Time', 0) for e in events)
-        return [{**e, 'Time': e['Time'] - base} for e in events]
-
-    e1 = _load(slot1)
-    e2 = _load(slot2)
-    e3 = _load(slot3)
-
-    if not e1 or not e2 or not e3:
-        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
-        return None
-
-    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
-    merged   = []
-    timeline = 0.0
-
-    # Slot 1
-    dur1 = max(e.get('Time', 0) for e in e1)
-    for e in e1:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur1
-
-    # Pre-play buffer 1->2
-    timeline += rng.uniform(500.0, 800.0)
-
-    # Slot 2
-    dur2 = max(e.get('Time', 0) for e in e2)
-    for e in e2:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur2
-
-    # Random wait: 1 minute to 3 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(60000.0, 10800000.0)
-    timeline += random_wait_ms
-
-    # Pre-play buffer 2->3
-    timeline += rng.uniform(500.0, 800.0)
-
-    # Slot 3
-    dur3 = max(e.get('Time', 0) for e in e3)
-    for e in e3:
-        merged.append({**e, 'Time': e['Time'] + timeline})
-    timeline += dur3
-
-    # Finalise: round times to int, sort
-    for e in merged:
-        e['Time'] = max(0, int(round(e['Time'])))
-    merged.sort(key=lambda e: e.get('Time', 0))
-
-    # Write to disk
-    try:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(merged, separators=(',', ':')))
-    except Exception as exc:
-        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
-        return None
-
-    total_min  = int(timeline / 60000)
-    total_sec  = int((timeline % 60000) / 1000)
-    wait_min   = int(random_wait_ms / 60000)
-    wait_sec   = int((random_wait_ms % 60000) / 1000)
-    print(f"  Built LOGOUT sequence:")
-    print(f"    1. {slot1.name}")
-    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
-    print(f"    3. {slot3.name}")
-    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
-    return out_path
-
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -6789,44 +6357,22 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
-    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
-    # build_logout_sequence() strings its 3 files and writes the result to
-    # output_root/- logout.json, which the copy block below picks up unchanged.
-    # Falls back to the old static '- logout.json' search if the folder is absent.
+    # Look for logout file
     logout_file = None
-    _logout_folder = None
-    for _d in search_base.iterdir():
-        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
-            _logout_folder = _d
+    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
+    for location_dir in [search_base, search_base.parent]:
+        if logout_file:
             break
-
-    if _logout_folder:
-        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout.json"
-        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
-        if _built:
-            logout_file = _built
-        else:
-            print(f"  [!] LOGOUT folder build failed — no logout file this run")
-    else:
-        # Fallback: look for a static logout .json at root level
-        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
-                           "logout", "- logout", "-logout"]
-        for location_dir in [search_base, search_base.parent]:
-            if logout_file:
-                break
-            for pattern in logout_patterns:
-                test_file = location_dir / pattern
-                for test_path in [test_file, Path(str(test_file) + ".json")]:
-                    if test_path.exists() and test_path.is_file():
-                        logout_file = test_path
-                        print(f"? Found logout file: {logout_file.name}")
-                        break
-
+        for pattern in logout_patterns:
+            test_file = location_dir / pattern
+            for test_path in [test_file, Path(str(test_file) + ".json")]:
+                if test_path.exists() and test_path.is_file():
+                    logout_file = test_path
+                    print(f"? Found logout file: {logout_file.name}")
+                    break
+    
     print()
-
+    
     # Scan folders
     main_folders = []
     for folder in search_base.iterdir():
@@ -6836,11 +6382,6 @@ def main():
         # Skip the DISTRACTIONS source folder - it is not a macro folder,
         # only the generated output copy goes into the bundle.
         if folder.name.lower() == 'distractions':
-            continue
-
-        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
-        # before the scan loop; should not be treated as a macro folder.
-        if folder.name.lower() == 'logout, wait, in':
             continue
         
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
@@ -7382,20 +6923,8 @@ def main():
                 folder_combinations_used.append(combo_signature)
                 
                 # BUILD CYCLE (F1 -> F2 -> F3) WITHOUT features
-                # Folder is click-sensitive if ANY subfolder in this folder is tagged,
-                # OR if the main folder name contains a click-sensitive tag.
-                # Belt-and-suspenders: check the name directly so that if the
-                # is_click_sensitive flag ever fails to propagate through the subfolder
-                # dicts (e.g. after specific-folders filtering), the feature is still
-                # correctly suppressed for all cycles in this folder.
-                _fn_lower = folder_name.lower()
-                _name_click_sensitive = (
-                    'click sensitive'      in _fn_lower or
-                    'click/time sensitive' in _fn_lower or
-                    'click+time sensitive' in _fn_lower or
-                    'click time sensitive' in _fn_lower
-                )
-                folder_is_click_sensitive = _name_click_sensitive or any(
+                # Folder is click-sensitive if ANY subfolder in this folder is tagged
+                folder_is_click_sensitive = any(
                     fd.get('is_click_sensitive', False)
                     for fd in subfolder_files.values()
                 )
@@ -7457,12 +6986,9 @@ def main():
                     inter_cycle_pause += int(_cycle_gap)
                     total_pre_file += _cycle_gap
 
-                    # Add cursor transition for raw/normal file types during the inter-cycle gap.
-                    # Inef skips this block — its transition is handled below in the inef block,
-                    # which covers the full 10-30s pause with a slow drift. Running both blocks
-                    # would: (1) move cursor to destination immediately in block 1, then (2) find
-                    # distance≈0 in block 2, generating no drift at all during the long pause.
-                    if not folder_is_click_sensitive and not is_inef:
+                    # Add cursor transition for all file types during the inter-cycle gap.
+                    # Use stringed_events[-1]['Time'] as base (after idle movements).
+                    if not is_click_sensitive:
                         _ic_last_x, _ic_last_y = None, None
                         for _e in reversed(stringed_events):
                             if _e.get('X') is not None and _e.get('Y') is not None:
@@ -7498,15 +7024,12 @@ def main():
                         inter_cycle_pause = int(rng.uniform(10000.0, 30000.0))
                         total_inter += inter_cycle_pause
 
-                    # Add slow cursor drift covering the full inef pause.
-                    # FIX (v3.18.75): _trans_base uses current_duration (real end of previous
-                    # cycle content), not stringed_events[-1]['Time']. The old code pointed to
-                    # the tail of any idle-movement events that extend beyond current_duration,
-                    # causing drift events to start late and overlap with the next cycle after
-                    # sort. Using current_duration anchors the drift correctly at the cycle
-                    # boundary. Block-1 is now skipped for inef (see above), so
-                    # stringed_events[-1] is still at current_duration when we arrive here —
-                    # but using current_duration explicitly is safer and self-documenting.
+                    # Add cursor transition during the inef pause.
+                    # IMPORTANT: use stringed_events[-1]['Time'] as base, NOT current_duration.
+                    # Idle movements (applied inside apply_cycle_features) extend stringed_events
+                    # BEYOND current_duration. Using current_duration places transition events
+                    # before the idle movements — they get buried/sorted into the idle wander
+                    # and the cursor still appears to teleport at the cycle boundary.
                     last_x, last_y = None, None
                     for e in reversed(stringed_events):
                         if e.get('X') is not None and e.get('Y') is not None:
@@ -7520,7 +7043,7 @@ def main():
                             break
 
                     if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
-                        _trans_base = current_duration  # FIX: anchor at cycle boundary, not after idle events
+                        _trans_base = stringed_events[-1]['Time']  # after idle movements
                         transition_path = generate_human_path(
                             last_x, last_y, first_x, first_y,
                             inter_cycle_pause, rng
