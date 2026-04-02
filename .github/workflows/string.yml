@@ -25,7 +25,7 @@ on:
       target_minutes:
         description: 'Target duration per stringed file *'
         required: true
-        default: '60'
+        default: '100'
 
 permissions:
   contents: write
