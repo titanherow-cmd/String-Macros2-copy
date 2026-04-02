@@ -227,8 +227,12 @@ STRING MACROS - FEATURE LIST
     Tracked in manifest as flat (no mult).
 
 35. INTRA-FILE ZERO-GAP PROTECTION
-    On load: MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
+    On load: two checks, both shift all events from the click forward.
+    Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
+    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
+    Prevents too-fast re-press sequences where the macro player cannot
+    distinguish a genuine release+re-click from a single held drag.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -281,6 +285,18 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.79: Extended intra-file zero-gap fix (Feature 25) with Part B:
+            DragEnd -> DragStart pairs with a gap under 150ms are now shifted
+            to enforce a 200ms minimum separation.
+            ROOT CAUSE: source recordings contain rapid drag re-presses (52-130ms
+            apart, always at identical coordinates). The macro player cannot
+            distinguish a genuine button release + re-click from a single held
+            drag in that time window, causing left-button clamp.
+            Part A (MouseMove -> click-type < 15ms → 20ms) is unchanged.
+            Part B is a second independent loop that runs after Part A on the
+            same raw event list, before any features are applied.
+            Confirmed: strung file had 16 DragEnd->DragStart pairs under 150ms
+            (min 52ms); all are caught and shifted by Part B.
 - v3.18.78: Fixed click-sensitive flag silently falling through as False in the outer loop.
             ROOT CAUSE: folder_is_click_sensitive was computed purely from subfolder dicts:
               any(fd.get('is_click_sensitive', False) for fd in subfolder_files.values())
@@ -394,7 +410,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.78"
+VERSION = "v3.18.79"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1461,15 +1477,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             return
 
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        # millisecond (or within 1-14ms) at the same coordinates. The macro player
-        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
-        # from "both at once" - causing a left-button clamp at that position.
-        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
-        # shift the click event (and all subsequent events) forward by enough to
-        # create a clean 20ms separation. This is applied to the raw event list
-        # before any features are added so it doesn't interact with jitter/pauses.
+        # Two separate checks, both shift the DragStart (and all events after it)
+        # forward to enforce a minimum gap:
+        #
+        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
+        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        #   millisecond (or within 1-14ms). The macro player reads these as
+        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
+        #   once" - causing a left-button clamp at that position.
+        #   Threshold: 15ms  |  Target separation: 20ms
+        #
+        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        #   Some recordings have a DragEnd followed almost immediately by another
+        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
+        #   The macro player doesn't have enough time to register a genuine button
+        #   release and re-press — it reads the pair as a single continuous hold,
+        #   causing the left-button to clamp. 150ms was chosen because it covers
+        #   all observed problem pairs (52-130ms) with headroom; human re-click
+        #   reactions are typically 200ms+, so 200ms target is imperceptible.
+        #   Threshold: 150ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
+
+        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -1478,6 +1507,18 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _ZERO_GAP_THRESHOLD:
                     _shift = _ZERO_GAP_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
+        # Part B: DragEnd -> DragStart too-fast re-press
+        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
+        for _zi in range(1, len(events)):
+            if (events[_zi].get('Type') == 'DragStart'
+                    and events[_zi - 1].get('Type') == 'DragEnd'):
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
+                    _shift = _DRAG_REPRESS_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
@@ -3484,7 +3525,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.78"
+VERSION = "v3.18.79"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5181,15 +5222,28 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             return
 
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        # millisecond (or within 1-14ms) at the same coordinates. The macro player
-        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
-        # from "both at once" - causing a left-button clamp at that position.
-        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
-        # shift the click event (and all subsequent events) forward by enough to
-        # create a clean 20ms separation. This is applied to the raw event list
-        # before any features are added so it doesn't interact with jitter/pauses.
+        # Two separate checks, both shift the DragStart (and all events after it)
+        # forward to enforce a minimum gap:
+        #
+        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
+        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        #   millisecond (or within 1-14ms). The macro player reads these as
+        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
+        #   once" - causing a left-button clamp at that position.
+        #   Threshold: 15ms  |  Target separation: 20ms
+        #
+        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        #   Some recordings have a DragEnd followed almost immediately by another
+        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
+        #   The macro player doesn't have enough time to register a genuine button
+        #   release and re-press — it reads the pair as a single continuous hold,
+        #   causing the left-button to clamp. 150ms was chosen because it covers
+        #   all observed problem pairs (52-130ms) with headroom; human re-click
+        #   reactions are typically 200ms+, so 200ms target is imperceptible.
+        #   Threshold: 150ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
+
+        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -5198,6 +5252,18 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _ZERO_GAP_THRESHOLD:
                     _shift = _ZERO_GAP_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
+        # Part B: DragEnd -> DragStart too-fast re-press
+        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
+        for _zi in range(1, len(events)):
+            if (events[_zi].get('Type') == 'DragStart'
+                    and events[_zi - 1].get('Type') == 'DragEnd'):
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
+                    _shift = _DRAG_REPRESS_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
