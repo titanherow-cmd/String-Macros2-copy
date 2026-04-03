@@ -2,7 +2,7 @@
 """
 STRING MACROS - FEATURE LIST
 ===========================================================================
-Current version: v3.18.80
+Current version: v3.18.81
 File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
 Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 ===========================================================================
@@ -235,6 +235,8 @@ The folder is excluded from the main macro scan (not treated as a macro folder).
 Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
 ===========================================================================
 CHANGELOG (recent):
+- v3.18.81: Fixed SyntaxError in legacy folder parser where a literal newline
+was accidentally placed inside a string literal instead of '\n'.
 - v3.18.80: Fixed 'sticky' clicks converting to drags. Increased LeftUp delay
 in fix_click_events() from 10-20ms to 40-60ms and implemented timeline
 shifting for subsequent events. Prevents macro players from reading the
@@ -242,108 +244,17 @@ inter-click gap as a held button when followed by immediate mouse movement.
 - v3.18.79: Extended intra-file zero-gap fix (Feature 25) with Part B:
 DragEnd -> DragStart pairs with a gap under 150ms are now shifted
 to enforce a 200ms minimum separation.
-ROOT CAUSE: source recordings contain rapid drag re-presses (52-130ms
-apart, always at identical coordinates). The macro player cannot
-distinguish a genuine button release + re-click from a single held
-drag in that time window, causing left-button clamp.
-Part A (MouseMove -> click-type < 15ms → 20ms) is unchanged.
-Part B is a second independent loop that runs after Part A on the
-same raw event list, before any features are applied.
-Confirmed: strung file had 16 DragEnd->DragStart pairs under 150ms
-(min 52ms); all are caught and shifted by Part B.
 - v3.18.78: Fixed click-sensitive flag silently falling through as False in the outer loop.
-ROOT CAUSE: folder_is_click_sensitive was computed purely from subfolder dicts:
-any(fd.get('is_click_sensitive', False) for fd in subfolder_files.values())
-If the subfolder dicts lacked the flag (e.g. from an older scan code path or
-a specific-folders filter edge case), the check returned False even for folders
-whose name contains 'click sensitive'/'click+time sensitive' etc.
-EFFECT: for click-sensitive folders, BOTH jitter and cursor transitions were
-applied to cycle content when they should be suppressed. Confirmed via data:
-57 always_first events showed ±1-3px jitter shifts, and 2 cursor transition
-path events appeared before the always_first start in the strung file. The
-mis-placed cursor events caused the DragStart to fire over an unexpected
-screen position → left-click button clamp.
-FIX: belt-and-suspenders — folder_is_click_sensitive now ALSO checks
-folder_name directly for any click-sensitive tag (same 4 patterns as the
-scanner). Name check || subfolder-dict check, so either alone suffices.
-- v3.18.77: Two bug fixes:
-1. NameError in inter-cycle transition block (v3.18.75 regression):
-outer loop uses 'folder_is_click_sensitive' but the block wrote
-'is_click_sensitive' (the parameter name inside string_cycle).
-Fixed: changed to 'folder_is_click_sensitive' in the outer loop.
-2. LOGOUT wait time was identical across runs for the same bundle ID
-because _lo_rng was seeded with (bundle_id + 31337). Changed to
-random.Random() (unseeded, system entropy) so every run produces
-a genuinely different wait duration for the idle file.
+- v3.18.77: Two bug fixes: NameError in inter-cycle transition & LOGOUT wait time determinism.
 - v3.18.76: New Feature 40 — LOGOUT sequence folder ('LOGOUT, wait, in').
-Replaces the static '- logout.json' file with a strung 3-file
-sequence: proper logout -> idle wait (1min-3hrs random) -> relogin.
-build_logout_sequence() function added (both copies). Detection
-runs before the main scan; LOGOUT folder is skipped in scan loop.
-Uses a dedicated rng (bundle_id + 31337) seeded independently.
 - v3.18.75: Fixed two inter-cycle cursor transition bugs causing teleports between cycles.
-BUG 1 (all non-click-sensitive types): Block-1 ran for inef files AND for
-raw/normal. For inef, it immediately moved the cursor to the destination in
-~500-800ms. Block-2 then found distance≈0 between last and first positions
-→ generate_human_path returned a single point → path[:-1] was empty → zero
-drift events during the 10-30s inef pause. The teleport was still visible
-at the start of the next cycle.
-FIX: Block-1 now skips inef files (`and not is_inef`). Inef transition is
-handled entirely by block-2 which covers the full 10-30s with a slow drift.
-BUG 2 (inef only): Block-2 used `_trans_base = stringed_events[-1]['Time']`.
-When idle-movement events extended stringed_events beyond current_duration,
-this base was too late — drift events started mid-pause and the last ones
-landed past the next cycle's content start, overlapping after sort.
-FIX: Block-2 now uses `_trans_base = current_duration` — the true end of
-the previous cycle's content — anchoring the drift exactly at the boundary.
 - v3.18.46: ESC key (KeyCode 27) removed from filter_problematic_keys.
-ESC was being stripped from every source file on load because macro
-players use ESC to stop playback. However ESC is also a valid in-game
-action (e.g. closing menus, cancelling dialogs) and must be preserved.
-Remaining filtered keys: HOME(36), END(35), PAGE_UP(33), PAGE_DOWN(34),
-PAUSE(19), PRINT_SCREEN(44) — these have no in-game use and reliably
-break or freeze macro playback.
 - v3.18.45: Pre-play buffer now also fires between cycles (all file types).
-ROOT CAUSE of click-through bug: add_file_to_cycle fires a 500-800ms
-buffer between files WITHIN a cycle (when files_added > 0). But at
-the boundary between cycle N and cycle N+1, files_added resets to 0
-for the first file of the new cycle — no buffer fires. This left the
-last DragEnd of cycle N and the cursor transition start of cycle N+1
-at the exact same timestamp (0ms gap). The game reads simultaneous
-DragEnd + MouseMove as cursor still held -> drag-click at wrong coords.
-Fix: in the outer loop, if stringed_events is non-empty (not first cycle),
-add a rng.uniform(500,800)ms gap to inter_cycle_pause for ALL file types
-before appending the next cycle. Tracked in total_pre_file.
 - v3.18.44: Flat/single-subfolder always_first/last now wraps whole strung file.
-Previously string_cycle played always_first/last on EVERY cycle call,
-so a 50-cycle file had 50x [ALWAYS FIRST]...[ALWAYS LAST] pairs.
-Fix: outer loop passes play_always_first=True only on cycle 0, and
-suppresses play_always_last entirely. After the while loop, always_last
-is injected once directly into stringed_events with a pre-play buffer.
-Result: [ALWAYS FIRST] -> file_1 -> file_2 -> ... -> file_N -> [ALWAYS LAST]
 - v3.18.43: CRITICAL — end tag now uses word-boundary matching.
-BUG: 'end' in folder_name was a substring check. Any folder name
-containing a word with "end" in it (e.g. "click tend", "blend",
-"extended") was being tagged as an END folder, causing the loop to
-stop there and skip all subsequent folders.
-Example: "F4- use log on fire OR click tend" matched because
-"t-END" contains "end" -> loop stopped at F4, F5 and F6 ignored.
-FIX: changed to re.search(r'\bend\b', ...) — whole-word match only.
-"tend" no longer matches. "end", "end-logout", "optional+end" still do.
-- v3.18.42: Two fixes:
-1. optional+end tag renamed from "optional/end" everywhere in docs,
-comments, print output, and manifest. Tag detection unchanged
-(still looks for both "optional" AND "end" in folder name).
-2. All combination.append() calls now consistently wrap the file in
-a list [_f] — the optional+end branch, end branch, and fallback
-path were appending raw Path objects. string_cycle has an
-isinstance guard that handled it safely, but this makes the
-contract explicit and removes the inconsistency.
+- v3.18.42: Two fixes: optional+end tag renamed & combination.append() consistency.
 - v3.18.41: always_first/last in multi-subfolder mode now wraps ONLY the files
 of their own folder, then continues to remaining folders.
-Pattern: [ALWAYS FIRST] -> F0 files -> [ALWAYS LAST] -> F1 -> F2 -> ...
-Previously wrapped the entire cycle (all folders). Also fixed file
-corruption from emoji-stripping pass (ohno_pause variable, prefix docs).
 - v3.18.39: click sensitive main-folder tag now propagates to all subfolders
 - v3.18.38: click sensitive also skips distraction file insertion
 - v3.18.37: click sensitive fully implemented (jitter + idle + transitions all skipped)
@@ -357,12 +268,12 @@ dedup by filename globally; subfolder counts in manifest
 copied folder dedup; subfolder counts
 - v3.18.31: virtual queue for all subfolder files; post-pause delay deleted;
 distraction in manifest; massive pause 4-7 min; within-file %
-- v3.18.30: intra-file zero-gap protection (Feature 35)
+- v3.18.30: intra-file zero-gap protection (Feature 25)
 - v3.18.29: virtual queue for distraction files; 2:3:7 ratio distribution
 """
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
-VERSION = "v3.18.80"
+VERSION = "v3.18.81"
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
 # ============================================================================
@@ -2723,8 +2634,7 @@ def main():
                         entries[folder_key] = sf_nums if sf_nums else None
                     else:
                         # No colon — legacy comma-separated folder names (no subfolder filter)
-                        for name in line.replace(',', '
-').splitlines():
+                        for name in line.replace(',', '\n').splitlines():
                             name = name.strip()
                             if name:
                                 entries[name.lower()] = None  # None = all subfolders
