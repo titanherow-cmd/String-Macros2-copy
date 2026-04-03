@@ -1,3 +1,7 @@
+--- temp_string_macros.py (原始)
+
+
++++ temp_string_macros.py (修改后)
 #!/usr/bin/env python3
 """
 STRING MACROS - FEATURE LIST
