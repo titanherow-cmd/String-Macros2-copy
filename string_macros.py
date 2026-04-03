@@ -130,7 +130,7 @@ STRING MACROS - FEATURE LIST
     For nested folders: -N- means max N complete sub-cycles (loops), not files.
 
 18. END TAG
-    Uses word-boundary match en) — "tend" does NOT match.
+    Uses word-boundary match (end) — "tend" does NOT match.
     Loop stops after this folder. Always included if reached.
 
 19. OPTIONAL+END COMBO TAG
@@ -227,8 +227,12 @@ STRING MACROS - FEATURE LIST
     Tracked in manifest as flat (no mult).
 
 35. INTRA-FILE ZERO-GAP PROTECTION
-    On load: MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
+    On load: two checks, both shift all events from the click forward.
+    Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
+    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
+    Prevents too-fast re-press sequences where the macro player cannot
+    distinguish a genuine release+re-click from a single held drag.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -258,9 +262,86 @@ STRING MACROS - FEATURE LIST
     Internal subfolders support all tags: optional, end, time/click sensitive.
     Separate ManualHistoryTracker maintained for nested folder's combos.
 
+40. LOGOUT SEQUENCE FOLDER (Feature 40)
+    Trigger: folder named 'LOGOUT, wait, in' (case-insensitive) at the root
+    level of input_macros/.
+    Contents: exactly 3 .json files identified by keyword in filename:
+      - File containing 'proper'  → slot 1: actual logout actions
+      - File containing 'nothing' → slot 2: idle wait period
+      - File containing 'relogin' → slot 3: re-login actions
+    Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
+                     500-800ms buffer → slot3
+    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
+                 Float value, never rounded — full millisecond precision.
+    Features: NO anti-detection features applied (files inserted raw).
+              filter_problematic_keys() is applied on load.
+    Output: written to output_root/- logout.json, then copied to each
+            bundle folder as "@ N LOGOUT.JSON" (same as static logout file).
+    Priority: takes precedence over the legacy '- logout.json' static file.
+    Fallback: if the folder is missing, the old static file search still runs.
+    The folder is excluded from the main macro scan (not treated as a macro folder).
+    Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
+
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.79: Extended intra-file zero-gap fix (Feature 25) with Part B:
+            DragEnd -> DragStart pairs with a gap under 150ms are now shifted
+            to enforce a 200ms minimum separation.
+            ROOT CAUSE: source recordings contain rapid drag re-presses (52-130ms
+            apart, always at identical coordinates). The macro player cannot
+            distinguish a genuine button release + re-click from a single held
+            drag in that time window, causing left-button clamp.
+            Part A (MouseMove -> click-type < 15ms → 20ms) is unchanged.
+            Part B is a second independent loop that runs after Part A on the
+            same raw event list, before any features are applied.
+            Confirmed: strung file had 16 DragEnd->DragStart pairs under 150ms
+            (min 52ms); all are caught and shifted by Part B.
+- v3.18.78: Fixed click-sensitive flag silently falling through as False in the outer loop.
+            ROOT CAUSE: folder_is_click_sensitive was computed purely from subfolder dicts:
+              any(fd.get('is_click_sensitive', False) for fd in subfolder_files.values())
+            If the subfolder dicts lacked the flag (e.g. from an older scan code path or
+            a specific-folders filter edge case), the check returned False even for folders
+            whose name contains 'click sensitive'/'click+time sensitive' etc.
+            EFFECT: for click-sensitive folders, BOTH jitter and cursor transitions were
+            applied to cycle content when they should be suppressed. Confirmed via data:
+            57 always_first events showed ±1-3px jitter shifts, and 2 cursor transition
+            path events appeared before the always_first start in the strung file. The
+            mis-placed cursor events caused the DragStart to fire over an unexpected
+            screen position → left-click button clamp.
+            FIX: belt-and-suspenders — folder_is_click_sensitive now ALSO checks
+            folder_name directly for any click-sensitive tag (same 4 patterns as the
+            scanner). Name check || subfolder-dict check, so either alone suffices.
+- v3.18.77: Two bug fixes:
+            1. NameError in inter-cycle transition block (v3.18.75 regression):
+               outer loop uses 'folder_is_click_sensitive' but the block wrote
+               'is_click_sensitive' (the parameter name inside string_cycle).
+               Fixed: changed to 'folder_is_click_sensitive' in the outer loop.
+            2. LOGOUT wait time was identical across runs for the same bundle ID
+               because _lo_rng was seeded with (bundle_id + 31337). Changed to
+               random.Random() (unseeded, system entropy) so every run produces
+               a genuinely different wait duration for the idle file.
+- v3.18.76: New Feature 40 — LOGOUT sequence folder ('LOGOUT, wait, in').
+            Replaces the static '- logout.json' file with a strung 3-file
+            sequence: proper logout -> idle wait (1min-3hrs random) -> relogin.
+            build_logout_sequence() function added (both copies). Detection
+            runs before the main scan; LOGOUT folder is skipped in scan loop.
+            Uses a dedicated rng (bundle_id + 31337) seeded independently.
+- v3.18.75: Fixed two inter-cycle cursor transition bugs causing teleports between cycles.
+            BUG 1 (all non-click-sensitive types): Block-1 ran for inef files AND for
+            raw/normal. For inef, it immediately moved the cursor to the destination in
+            ~500-800ms. Block-2 then found distance≈0 between last and first positions
+            → generate_human_path returned a single point → path[:-1] was empty → zero
+            drift events during the 10-30s inef pause. The teleport was still visible
+            at the start of the next cycle.
+            FIX: Block-1 now skips inef files (`and not is_inef`). Inef transition is
+            handled entirely by block-2 which covers the full 10-30s with a slow drift.
+            BUG 2 (inef only): Block-2 used `_trans_base = stringed_events[-1]['Time']`.
+            When idle-movement events extended stringed_events beyond current_duration,
+            this base was too late — drift events started mid-pause and the last ones
+            landed past the next cycle's content start, overlapping after sort.
+            FIX: Block-2 now uses `_trans_base = current_duration` — the true end of
+            the previous cycle's content — anchoring the drift exactly at the boundary.
 - v3.18.46: ESC key (KeyCode 27) removed from filter_problematic_keys.
             ESC was being stripped from every source file on load because macro
             players use ESC to stop playback. However ESC is also a valid in-game
@@ -324,20 +405,18 @@ CHANGELOG (recent):
             distraction in manifest; massive pause 4-7 min; within-file %
 - v3.18.30: intra-file zero-gap protection (Feature 35)
 - v3.18.29: virtual queue for distraction files; 2:3:7 ratio distribution
-- v3.18.74: fix_click_events() moved to run BEFORE time-modifying features in add_file_to_cycle()
-            to prevent DragStart/DragEnd pairing from breaking due to timestamp shifts
 """
 
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.74"
+VERSION = "v3.18.79"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
 # ============================================================================
 
-# ============================================================================
+
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -368,13 +447,13 @@ def filter_problematic_keys(events: list) -> list:
     """
     problematic_codes = {19, 33, 34, 35, 36, 44}  # ESC(27) removed - valid in-game action
     filtered = []
-
+    
     for event in events:
         keycode = event.get('KeyCode')
         if keycode in problematic_codes:
             continue
         filtered.append(event)
-
+    
     return filtered
 
 def parse_optional_chance(folder_name: str) -> float:
@@ -449,24 +528,18 @@ def parse_max_files(folder_name: str) -> int:
 def fix_click_events(events: list) -> list:
     """
     Convert 'Click' events to LeftDown+LeftUp pairs.
-    Also convert short-duration DragStart->DragEnd pairs (same position) to LeftDown+LeftUp.
     This prevents the mouse from clamping down and dragging.
-
+    
     CRITICAL FIX from merge_macros.py!
-    v3.18.74: Added DragStart/DragEnd conversion for quick clicks (<150ms, same pos)
     """
     fixed = []
-    i = 0
-    while i < len(events):
-        event = events[i]
-        event_type = event.get('Type')
-
-        if event_type == 'Click':
+    for event in events:
+        if event.get('Type') == 'Click':
             # Replace Click with LeftDown + LeftUp pair
             time = event.get('Time', 0)
             x = event.get('X')
             y = event.get('Y')
-
+            
             # LeftDown at same time
             left_down = {
                 'Type': 'LeftDown',
@@ -476,7 +549,7 @@ def fix_click_events(events: list) -> list:
                 left_down['X'] = x
             if y is not None:
                 left_down['Y'] = y
-
+            
             # LeftUp 10-20ms later (small random delay)
             left_up = {
                 'Type': 'LeftUp',
@@ -486,115 +559,48 @@ def fix_click_events(events: list) -> list:
                 left_up['X'] = x
             if y is not None:
                 left_up['Y'] = y
-
+            
             fixed.append(left_down)
             fixed.append(left_up)
-            i += 1
-
-        elif event_type == 'DragStart':
-            # Check if this DragStart is followed by a DragEnd quickly (quick click)
-            # Look ahead for matching DragEnd
-            found_drag_end = False
-            drag_end_idx = -1
-            for j in range(i + 1, min(i + 5, len(events))):
-                if events[j].get('Type') == 'DragEnd':
-                    found_drag_end = True
-                    drag_end_idx = j
-                    break
-
-            if found_drag_end:
-                drag_start_time = event.get('Time', 0)
-                drag_end_time = events[drag_end_idx].get('Time', 0)
-                drag_duration = drag_end_time - drag_start_time
-                drag_start_x = event.get('X')
-                drag_start_y = event.get('Y')
-                drag_end_x = events[drag_end_idx].get('X')
-                drag_end_y = events[drag_end_idx].get('Y')
-
-                # Check if this is a quick click: <150ms AND same/near position
-                same_position = (drag_start_x == drag_end_x and drag_start_y == drag_end_y)
-                near_position = (drag_start_x is not None and drag_end_x is not None
-                                and abs(drag_start_x - drag_end_x) <= 3
-                                and abs(drag_start_y - drag_end_y) <= 3)
-
-                if drag_duration < 150 and (same_position or near_position):
-                    # Convert to LeftDown + LeftUp pair
-                    left_down = {
-                        'Type': 'LeftDown',
-                        'Time': drag_start_time,
-                    }
-                    if drag_start_x is not None:
-                        left_down['X'] = drag_start_x
-                    if drag_start_y is not None:
-                        left_down['Y'] = drag_start_y
-
-                    # LeftUp 10-20ms later, or use original duration if longer
-                    up_delay = max(random.randint(10, 20), min(drag_duration, 30))
-                    left_up = {
-                        'Type': 'LeftUp',
-                        'Time': drag_start_time + up_delay,
-                    }
-                    if drag_start_x is not None:
-                        left_up['X'] = drag_start_x
-                    if drag_start_y is not None:
-                        left_up['Y'] = drag_start_y
-
-                    fixed.append(left_down)
-                    fixed.append(left_up)
-                    i = drag_end_idx + 1  # Skip past the DragEnd
-                    continue
-
-            # Not a quick click - keep DragStart as-is
-            fixed.append(event)
-            i += 1
-
-        elif event_type == 'DragEnd':
-            # Standalone DragEnd (no matching DragStart before it) - keep as-is
-            # This should not happen normally, but handle gracefully
-            fixed.append(event)
-            i += 1
-
         else:
             # Keep all other events as-is
             fixed.append(event)
-            i += 1
-
+    
     return fixed
-
 
 def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     """
     Generate a human-like mouse path with variable speed, path styles, and wobbles.
-
+    
     Path Styles:
     - Efficient: Direct path, few curves, faster
     - Meandering: Curved path, more wandering, varied speed
     - Hesitant: Slow start, acceleration, deceleration
     - Swift: Fast throughout, minimal curves
-
+    
     Speed Variations:
     - Very fast: 100-200ms typical
     - Fast: 200-300ms typical
     - Normal: 300-500ms typical
     - Slow: 500-700ms typical
     - Very slow: 700-1000ms typical
-
+    
     Returns: List of (time_ms, x, y) tuples.
     """
     if duration_ms < 100:
         return [(0, end_x, end_y)]
-
+    
     path = []
     dx = end_x - start_x
     dy = end_y - start_y
     distance = math.sqrt(dx**2 + dy**2)
-
+    
     if distance < 5:
         return [(0, end_x, end_y)]
-
+    
     # Choose path style (determines curvature and speed pattern)
     path_style = rng.choice(['efficient', 'meandering', 'hesitant', 'swift'])
-
+    
     # Determine num_steps based on distance and path style
     if path_style == 'efficient':
         # Direct, fewer steps
@@ -608,7 +614,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     else:  # hesitant
         # Medium steps
         num_steps = max(4, min(int(distance / 15), int(duration_ms / 50)))
-
+    
     # Add control points based on path style
     if path_style == 'efficient':
         # Few or no control points (straighter path)
@@ -626,7 +632,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         # Medium control points
         num_control = rng.randint(1, 2)
         offset_range = 0.25
-
+    
     control_points = []
     for _ in range(num_control):
         offset = rng.uniform(-offset_range, offset_range) * distance
@@ -634,13 +640,13 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         ctrl_x = start_x + dx * t + (-dy / (distance + 1)) * offset
         ctrl_y = start_y + dy * t + (dx / (distance + 1)) * offset
         control_points.append((ctrl_x, ctrl_y, t))
-
+    
     control_points.sort(key=lambda p: p[2])
     current_time = 0
-
+    
     for step in range(num_steps + 1):
         t_raw = step / num_steps
-
+        
         # Apply speed profile based on path style
         if path_style == 'efficient':
             # Smooth acceleration
@@ -654,7 +660,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         else:  # hesitant
             # Slow start, fast middle, slow end
             t = 0.5 * (1 - math.cos(t_raw * math.pi))
-
+        
         # Calculate position
         if not control_points:
             x = start_x + dx * t
@@ -674,7 +680,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
                         y = ctrl_y + (end_y - ctrl_y) * segment_t
                     else:
                         start_x, start_y = ctrl_x, ctrl_y
-
+        
         # Add wobble (less for swift, more for meandering)
         if path_style == 'swift':
             wobble = rng.uniform(0, 2) if step > 0 and step < num_steps else 0
@@ -682,18 +688,18 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
             wobble = rng.uniform(1, 7) if step > 0 and step < num_steps else 0
         else:
             wobble = rng.uniform(1, 5) if step > 0 and step < num_steps else 0
-
+        
         x += rng.uniform(-wobble, wobble)
         y += rng.uniform(-wobble, wobble)
-
+        
         # Bounds
         x = max(100, min(1800, int(x)))
         y = max(100, min(1000, int(y)))
-
+        
         step_time = int(t * duration_ms)
         current_time = max(current_time, step_time)
         path.append((current_time, x, y))
-
+    
     return path
 
 # ============================================================================
@@ -720,17 +726,17 @@ def is_in_drag_sequence(events, index, drag_indices=None):
         elif event_type == "DragStart":
             drag_started = True
             break
-
+    
     if not drag_started:
         return False
-
+    
     for j in range(index + 1, len(events)):
         event_type = events[j].get("Type", "")
         if event_type == "DragEnd":
             return True
         elif event_type == "DragStart":
             return False
-
+    
     return False
 
 
@@ -754,65 +760,65 @@ def build_drag_index_set(events) -> set:
 def detect_rapid_click_sequences(events):
     """
     Detect sequences of rapid clicks at similar coordinates.
-
+    
     Detects:
     - Double clicks (2 clicks within 500ms, +/-5 pixels)
     - Spam clicks (3+ clicks within 2 seconds, +/-10 pixels)
-
+    
     Returns list of protected ranges: [(start_idx, end_idx), ...]
     These ranges should NOT have pauses/gaps inserted between them.
     """
     if not events or len(events) < 2:
         return []
-
+    
     protected_ranges = []
-
+    
     i = 0
     while i < len(events):
         event = events[i]
-
+        
         # Check Click and DragStart events (both are click actions)
         event_type = event.get("Type")
         if event_type not in ("Click", "DragStart"):
             i += 1
             continue
-
+        
         # Found a click, look for nearby clicks
         click_sequence = [i]
         first_time = event.get("Time", 0)
         first_x = event.get("X")
         first_y = event.get("Y")
-
+        
         if first_x is None or first_y is None:
             i += 1
             continue
-
+        
         # Look ahead for more clicks
         j = i + 1
         while j < len(events):
             next_event = events[j]
             next_time = next_event.get("Time", 0)
-
+            
             # Stop looking if too far in time (2 seconds max)
             if next_time - first_time > 2000:
                 break
-
+            
             # Check if it's a click or drag
             next_type = next_event.get("Type")
             if next_type in ("Click", "DragStart"):
                 next_x = next_event.get("X")
                 next_y = next_event.get("Y")
-
+                
                 if next_x is not None and next_y is not None:
                     # Calculate distance from first click
                     dist = ((next_x - first_x) ** 2 + (next_y - first_y) ** 2) ** 0.5
-
+                    
                     # If within 10 pixels, part of sequence
                     if dist <= 10:
                         click_sequence.append(j)
-
+            
             j += 1
-
+        
         # If found 2+ clicks, protect the sequence
         if len(click_sequence) >= 2:
             start_idx = click_sequence[0]
@@ -821,7 +827,7 @@ def detect_rapid_click_sequences(events):
             i = end_idx + 1
         else:
             i += 1
-
+    
     return protected_ranges
 
 
@@ -836,21 +842,21 @@ def is_in_protected_range(index, protected_ranges):
 def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
     """
     SMART JITTER SYSTEM v3.9.0
-
+    
     Add realistic micro-movements to 9-21% of TOTAL file movements.
     CRITICAL: NO jitter within 1 second before/after ANY click!
-
+    
     Rules:
     1. Jitter percentage: 9-21% of total MouseMove events
     2. Exclusion zone: 1000ms before AND after any click
     3. Only jitter MouseMove events (never Click, DragStart, RightDown, etc.)
     4. Jitter = 2-3 micro-movements (+/-1-3px) + final snap to exact position
-
+    
     Returns (events_with_jitter, jitter_count, total_moves, jitter_percentage).
     """
     if not events or len(events) < 2:
         return events, 0, 0, 0.0
-
+    
     # Step 1: Find ALL click times (any click-like event)
     click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
     click_times_sorted = sorted(
@@ -882,71 +888,71 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
 
             if is_safe:
                 safe_movements.append((i, event))
-
+    
     # Step 3: Calculate how many jitters to add (9-21% of TOTAL movements)
     jitter_percentage = rng.uniform(0.09, 0.21)
     target_jitters = int(total_moves * jitter_percentage)
-
+    
     # Can't jitter more than safe movements available
     target_jitters = min(target_jitters, len(safe_movements))
-
+    
     if target_jitters == 0:
         return events, 0, total_moves, jitter_percentage
-
+    
     # Step 4: Randomly select which safe movements get jitter
     movements_to_jitter = rng.sample(safe_movements, target_jitters)
-
+    
     # Sort by index (descending) so we insert from end to start
     # This prevents index shifting issues
     movements_to_jitter.sort(key=lambda x: x[0], reverse=True)
-
+    
     # Step 5: Add jitter to selected movements
     jitter_count = 0
-
+    
     for idx, event in movements_to_jitter:
         move_x = event.get('X')
         move_y = event.get('Y')
         move_time = event.get('Time')
-
+        
         if move_x is None or move_y is None or move_time is None:
             continue
-
+        
         # Generate 2-3 micro-movements
         num_jitters = rng.randint(2, 3)
         jitter_events = []
-
+        
         # Time budget: 100-200ms total
         time_budget = rng.randint(100, 200)
         time_per_jitter = time_budget // (num_jitters + 1)
-
+        
         # Cap time_budget so jitter events never go before t=0
         if move_time - time_budget < 0:
             time_budget = max(0, int(move_time) - 1)
         if time_budget == 0:
             continue  # Not enough room before this event - skip jitter
         current_time = move_time - time_budget
-
+        
         # Add jitter movements (+/-1-3 pixels)
         for j in range(num_jitters):
             offset_x = rng.randint(-3, 3)
             offset_y = rng.randint(-3, 3)
-
+            
             jitter_x = int(move_x) + offset_x
             jitter_y = int(move_y) + offset_y
-
+            
             # Bounds check
             jitter_x = max(100, min(1800, jitter_x))
             jitter_y = max(100, min(1000, jitter_y))
-
+            
             jitter_events.append({
                 'Type': 'MouseMove',
                 'Time': current_time,
                 'X': jitter_x,
                 'Y': jitter_y
             })
-
+            
             current_time += time_per_jitter
-
+        
         # Final movement: snap to EXACT target position
         jitter_events.append({
             'Type': 'MouseMove',
@@ -954,13 +960,13 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
             'X': int(move_x),
             'Y': int(move_y)
         })
-
+        
         # Insert jitter events BEFORE the original movement
         for jitter_idx, jitter_event in enumerate(jitter_events):
             events.insert(idx + jitter_idx, jitter_event)
-
+        
         jitter_count += 1
-
+    
     return events, jitter_count, total_moves, jitter_percentage
 
 def insert_intra_file_pauses(events: list, rng: random.Random,
@@ -1065,12 +1071,12 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     continue
                 if i in click_proximity:
                     continue
-
+                
                 # Calculate active window
                 active_duration = int(gap * movement_percentage)
                 buffer_start = (gap - active_duration) // 2
                 movement_start = current_time + buffer_start
-
+                
                 # Get start position
                 start_x, start_y = 500, 500
                 for j in range(i, -1, -1):
@@ -1080,7 +1086,7 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         start_x = int(x_val)
                         start_y = int(y_val)
                         break
-
+                
                 # Get next position (where we need to end up)
                 next_x, next_y = start_x, start_y
                 for j in range(i + 1, min(i + 20, len(events))):
@@ -1090,11 +1096,11 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         next_x = int(x_val)
                         next_y = int(y_val)
                         break
-
+                
                 # Reserve last 25% for smooth transition back
                 transition_duration = int(active_duration * 0.25)
                 pattern_duration = active_duration - transition_duration
-
+                
                 # Choose movement behavior
                 behavior = rng.choice([
                     'wander',      # Random wandering around
@@ -1104,27 +1110,27 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     'drift',       # Slow meandering
                     'scan'         # Move across screen
                 ])
-
+                
                 pattern_end_x, pattern_end_y = start_x, start_y
                 pattern_time_used = 0
-
+                
                 if behavior == 'wander':
                     # Random wandering - multiple small moves
                     num_moves = rng.randint(3, 6)
                     move_duration = pattern_duration // num_moves
-
+                    
                     current_x, current_y = start_x, start_y
-
+                    
                     for move_idx in range(num_moves):
                         # Pick random nearby target
                         target_x = current_x + rng.randint(-150, 150)
                         target_y = current_y + rng.randint(-100, 100)
                         target_x = max(100, min(1800, target_x))
                         target_y = max(100, min(1000, target_y))
-
+                        
                         # Generate human path
                         path = generate_human_path(current_x, current_y, target_x, target_y, move_duration, rng)
-
+                        
                         for path_time, px, py in path:
                             abs_time = movement_start + pattern_time_used + path_time
                             result.append({
@@ -1133,12 +1139,12 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                                 "X": px,
                                 "Y": py
                             })
-
+                        
                         current_x, current_y = path[-1][1], path[-1][2]
                         pattern_time_used += move_duration
-
+                    
                     pattern_end_x, pattern_end_y = current_x, current_y
-
+                
                 elif behavior == 'check_edge':
                     # Quick look at screen edge then back
                     edges = [
@@ -1148,108 +1154,108 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         (start_x, 950),    # Bottom edge
                     ]
                     edge_x, edge_y = rng.choice(edges)
-
+                    
                     # Move to edge (60% of time, fast)
                     edge_duration = int(pattern_duration * 0.6)
                     path_to_edge = generate_human_path(start_x, start_y, edge_x, edge_y, edge_duration, rng)
-
+                    
                     for path_time, px, py in path_to_edge:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     # Return near start (40% of time, slower)
                     return_duration = pattern_duration - edge_duration
                     return_x = start_x + rng.randint(-40, 40)
                     return_y = start_y + rng.randint(-40, 40)
                     return_x = max(100, min(1800, return_x))
                     return_y = max(100, min(1000, return_y))
-
+                    
                     path_return = generate_human_path(edge_x, edge_y, return_x, return_y, return_duration, rng)
-
+                    
                     for path_time, px, py in path_return:
                         abs_time = movement_start + edge_duration + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path_return[-1][1], path_return[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'fidget':
                     # Small rapid movements in small area
                     num_fidgets = rng.randint(5, 10)
                     fidget_duration = pattern_duration // num_fidgets
-
+                    
                     current_x, current_y = start_x, start_y
-
+                    
                     for fidget_idx in range(num_fidgets):
                         # Small offset
                         target_x = current_x + rng.randint(-30, 30)
                         target_y = current_y + rng.randint(-30, 30)
                         target_x = max(100, min(1800, target_x))
                         target_y = max(100, min(1000, target_y))
-
+                        
                         path = generate_human_path(current_x, current_y, target_x, target_y, fidget_duration, rng)
-
+                        
                         for path_time, px, py in path:
                             abs_time = movement_start + pattern_time_used + path_time
                             result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                        
                         current_x, current_y = path[-1][1], path[-1][2]
                         pattern_time_used += fidget_duration
-
+                    
                     pattern_end_x, pattern_end_y = current_x, current_y
-
+                
                 elif behavior == 'explore':
                     # Move far away then return near start
                     away_x = start_x + rng.randint(-400, 400)
                     away_y = start_y + rng.randint(-300, 300)
                     away_x = max(100, min(1800, away_x))
                     away_y = max(100, min(1000, away_y))
-
+                    
                     # Go away (65% of time)
                     away_duration = int(pattern_duration * 0.65)
                     path_away = generate_human_path(start_x, start_y, away_x, away_y, away_duration, rng)
-
+                    
                     for path_time, px, py in path_away:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     # Return (35% of time)
                     return_duration = pattern_duration - away_duration
                     return_x = start_x + rng.randint(-15, 15)
                     return_y = start_y + rng.randint(-15, 15)
                     return_x = max(100, min(1800, return_x))
                     return_y = max(100, min(1000, return_y))
-
+                    
                     path_return = generate_human_path(away_x, away_y, return_x, return_y, return_duration, rng)
-
+                    
                     for path_time, px, py in path_return:
                         abs_time = movement_start + away_duration + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path_return[-1][1], path_return[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'drift':
                     # Slow continuous drift
                     target_x = start_x + rng.randint(-200, 200)
                     target_y = start_y + rng.randint(-150, 150)
                     target_x = max(100, min(1800, target_x))
                     target_y = max(100, min(1000, target_y))
-
+                    
                     path = generate_human_path(start_x, start_y, target_x, target_y, pattern_duration, rng)
-
+                    
                     for path_time, px, py in path:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path[-1][1], path[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'scan':
                     # Scan across screen
                     scan_distance = rng.randint(300, 600)
                     direction = rng.choice(['horizontal', 'vertical', 'diagonal'])
-
+                    
                     if direction == 'horizontal':
                         target_x = start_x + (scan_distance if rng.random() < 0.5 else -scan_distance)
                         target_y = start_y + rng.randint(-50, 50)
@@ -1259,19 +1265,19 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     else:  # diagonal
                         target_x = start_x + (scan_distance if rng.random() < 0.5 else -scan_distance)
                         target_y = start_y + (scan_distance if rng.random() < 0.5 else -scan_distance)
-
+                    
                     target_x = max(100, min(1800, target_x))
                     target_y = max(100, min(1000, target_y))
-
+                    
                     path = generate_human_path(start_x, start_y, target_x, target_y, pattern_duration, rng)
-
+                    
                     for path_time, px, py in path:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path[-1][1], path[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 # Smooth transition back to next recorded position
                 transition_path = generate_human_path(
                     pattern_end_x, pattern_end_y,
@@ -1279,13 +1285,13 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     transition_duration,
                     rng
                 )
-
+                
                 for path_time, px, py in transition_path:
                     abs_time = movement_start + pattern_duration + path_time
                     result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                
                 total_idle_time += active_duration
-
+    
     return result, total_idle_time
 
 class QueueFileSelector:
@@ -1307,12 +1313,12 @@ class QueueFileSelector:
         target_min = target_ms - margin
         target_max = target_ms + margin
         actual_force = force_inef if not is_time_sensitive else False
-
+        
         # Keep adding files until we reach target
         # Stop conditions:
         # 1. Reached target OR
         # 2. Adding next file would overshoot by more than 4 minutes
-
+        
         while cur_ms < target_max:
             # Try to get next file
             if actual_force and self.ineff_pool: pick = self.ineff_pool.pop(0)
@@ -1322,9 +1328,9 @@ class QueueFileSelector:
                 pick = self.eff_pool.pop(0)
             elif self.ineff_pool and not is_time_sensitive: pick = self.ineff_pool.pop(0)
             else: break  # No more files
-
+            
             file_duration = self.durations.get(pick, 500)
-
+            
             # File selector multiplier - CRITICAL for accuracy
             # 1.0x = too many files (overshoot 11-18 min)
             # 1.8x = too few files (undershoot 10-13 min)
@@ -1333,11 +1339,11 @@ class QueueFileSelector:
                 estimated_time = file_duration * 1.05  # TIME SENSITIVE: minimal overhead
             else:
                 estimated_time = file_duration * 1.35  # NORMAL: balanced estimate
-
+            
             # Check if adding would overshoot too much
             potential_total = cur_ms + estimated_time
             overshoot = potential_total - target_ms
-
+            
             if overshoot > margin:  # Would overshoot beyond acceptable margin
                 # Only skip if we're already reasonably close to target
                 if cur_ms >= (target_ms - (4 * 60000)):  # Within 4 min of target
@@ -1350,11 +1356,11 @@ class QueueFileSelector:
                 # Safe to add (won't overshoot by more than 4 min)
                 seq.append(pick)
                 cur_ms += estimated_time
-
+            
             # Safety limits
             if len(seq) > 800: break
             if cur_ms > target_ms * 3: break
-
+        
         return seq
 
 
@@ -1363,23 +1369,23 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
     """
     Insert one massive pause (500-2900ms x multiplier) at random point.
     For INEFFICIENT files only.
-
+    
     EXCLUDES pause from:
     - Drag sequences (between DragStart and DragEnd)
     - Rapid click sequences (double-clicks, spam clicks)
     - First/last 10% of file (for safety)
-
+    
     Returns (events_with_pause, pause_duration_ms, split_index)
     """
     if not events or len(events) < 10:
         return events, 0, 0
-
+    
     # Generate massive pause: 4-7 minutes (240000-420000ms) x multiplier
     pause_duration = int(rng.uniform(240000.0, 420000.0))  # no mult — flat 4-7 min
-
+    
     # Detect protected ranges (rapid clicks, double-clicks)
     protected_ranges = detect_rapid_click_sequences(events)
-
+    
     # Precompute drag membership O(n) -> O(1) lookups
     drag_indices = build_drag_index_set(events)
 
@@ -1387,7 +1393,7 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
     safe_indices = []
     first_safe = int(len(events) * 0.1)  # Skip first 10%
     last_safe = int(len(events) * 0.9)   # Skip last 10%
-
+    
     for i in range(first_safe, last_safe):
         if i in drag_indices:
             continue
@@ -1399,18 +1405,18 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
         if i + 1 < len(events) and (i + 1) in drag_indices:
             continue
         safe_indices.append(i)
-
+    
     # If no safe indices found, return original events
     if not safe_indices:
         return events, 0, 0
-
+    
     # Pick random safe split point
     split_index = rng.choice(safe_indices)
-
+    
     # Shift all events after split point
     for i in range(split_index + 1, len(events)):
         events[i]["Time"] += pause_duration
-
+    
     return events, pause_duration, split_index
 
 # ============================================================================
@@ -1444,21 +1450,21 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                         file between each pair of folder transitions.
     is_click_sensitive: if True, skip cursor pathing between files (no coord changes).
     """
-
+    
     def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
         """Helper to add a file to the cycle"""
         nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
-
+        
         # Load events
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 events = json.load(f)
         except Exception:
             return
-
+        
         if not events:
             return
-
+        
         # Capture base_time BEFORE filtering so that files where the first
         # event is a filtered key (e.g. END key at t=90ms) keep their full
         # original duration. Without this, base_time jumps to the first
@@ -1470,21 +1476,29 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if not events:
             return
 
-        # CRITICAL FIX v3.18.74: Convert quick DragStart->DragEnd clicks to LeftDown+LeftUp
-        # BEFORE any time-modifying features are applied. This prevents timestamp shifts
-        # from breaking the DragStart/DragEnd pairing detection in apply_cycle_features().
-        events = fix_click_events(events)
-
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        # millisecond (or within 1-14ms) at the same coordinates. The macro player
-        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
-        # from "both at once" - causing a left-button clamp at that position.
-        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
-        # shift the click event (and all subsequent events) forward by enough to
-        # create a clean 20ms separation. This is applied to the raw event list
-        # before any features are added so it doesn't interact with jitter/pauses.
+        # Two separate checks, both shift the DragStart (and all events after it)
+        # forward to enforce a minimum gap:
+        #
+        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
+        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        #   millisecond (or within 1-14ms). The macro player reads these as
+        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
+        #   once" - causing a left-button clamp at that position.
+        #   Threshold: 15ms  |  Target separation: 20ms
+        #
+        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        #   Some recordings have a DragEnd followed almost immediately by another
+        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
+        #   The macro player doesn't have enough time to register a genuine button
+        #   release and re-press — it reads the pair as a single continuous hold,
+        #   causing the left-button to clamp. 150ms was chosen because it covers
+        #   all observed problem pairs (52-130ms) with headroom; human re-click
+        #   reactions are typically 200ms+, so 200ms target is imperceptible.
+        #   Threshold: 150ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
+
+        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -1496,13 +1510,25 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
+        # Part B: DragEnd -> DragStart too-fast re-press
+        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
+        for _zi in range(1, len(events)):
+            if (events[_zi].get('Type') == 'DragStart'
+                    and events[_zi - 1].get('Type') == 'DragEnd'):
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
+                    _shift = _DRAG_REPRESS_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
         # Check if dmwm file
         if is_dmwm:
             has_dmwm = True
-
+        
         # Normalize timing — use pre-filter base so leading gaps are preserved
         base_time = base_time_pre_filter
-
+        
         # PRE-FILE PAUSE: 0.8 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
         if cycle_events:
@@ -1512,7 +1538,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
 
             # Track this pause
             total_pre_pause += pre_file_pause
-
+            
             # NOW do cursor transition (AFTER pause, so click has time to release)
             # Get last position from previous file
             last_x, last_y = None, None
@@ -1520,15 +1546,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 if e.get('X') is not None and e.get('Y') is not None:
                     last_x, last_y = int(e['X']), int(e['Y'])
                     break
-
+            
             # Get first position of current file
             first_x, first_y = None, None
             for e in events:
                 if e.get('X') is not None and e.get('Y') is not None:
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
-
-
+            
+            
             # CURSOR TRANSITION: skipped for click-sensitive folders
             # (no coordinate changes between files - cursor stays wherever it was)
             if not is_click_sensitive:
@@ -1558,32 +1584,32 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     post_snap_gap = int(rng.uniform(80, 150))
                     timeline += post_snap_gap
                     total_snap_gap_time += post_snap_gap
-
+        
         # Add events from current file
         for event in events:
             new_event = {**event}
             new_event['Time'] = event['Time'] - base_time + timeline
             cycle_events.append(new_event)
-
+        
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
             file_info_list.append((folder_num, file_label, is_dmwm, timeline))
         files_added += 1
-
+    
     # Main cycle building
     cycle_events = []
     file_info_list = []
     timeline = 0
     has_dmwm = False
-
+    
     files_added = 0  # Counts files added; guards pre-play buffer for every non-first file
     # NEW: Track pre-file pauses, post-pause delays, cursor transitions, and distraction durations
     total_pre_pause = 0
     total_transition_time = 0
     total_snap_gap_time = 0      # cumulative post-snap gaps (80-150ms per file transition)
     total_distraction_pause = 0  # cumulative duration of all inserted distraction files
-
+    
     # SINGLE-SUBFOLDER MODE: if only one subfolder exists, always_first/last
     # should bracket the ENTIRE strung file (once at the very start, once at
     # the very end) rather than wrapping every single selected file.
@@ -1599,7 +1625,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             is_dmwm = single_always_first in dmwm_file_set
             add_file_to_cycle(single_always_first, only_folder_num, is_dmwm,
                               f"[ALWAYS FIRST] {single_always_first.name}")
-
+    
     def _maybe_insert_distraction(cur_folder_num):
         """Roll the chance and insert one distraction file at the current timeline.
         Uses VirtualDistQueue so all 50 files play before any repeats."""
@@ -2305,15 +2331,15 @@ def scan_for_numbered_subfolders(base_path):
     """
     Scans folder for subfolders with numbers in their names.
     Also checks for "dont mess with me" subfolder and "optional" folders.
-
+    
     NEW: Checks main folder name for "time sensitive" tag.
     If main folder is tagged, ALL subfolders become time_sensitive!
-
+    
     Accepts: "1", "part1", "step2", "3-action", "3 optional- walk", "3.5- insert", etc.
     DECIMAL SUPPORT: "3.5" will be placed after "3" and before "4"
-
+    
     Returns tuple: (numbered_folders_dict, dmwm_file_set, non_json_files_list)
-
+    
     numbered_folders: {num: {'files': [...], 'is_optional': bool}}
     dmwm_file_set: set of files from "dont mess with me"
     non_json_files: [list of non-JSON files to copy]
@@ -2322,7 +2348,7 @@ def scan_for_numbered_subfolders(base_path):
     numbered_folders = {}
     unmodified_files = []
     non_json_files = []
-
+    
     # Check if MAIN FOLDER is tagged - propagates to ALL subfolders
     _base_lower = base.name.lower()
     main_folder_time_sensitive  = 'time sensitive'  in _base_lower
@@ -2337,14 +2363,14 @@ def scan_for_numbered_subfolders(base_path):
         print(f"  ??  MAIN FOLDER is TIME SENSITIVE - All subfolders will skip inefficient files!")
     if main_folder_click_sensitive:
         print(f"  ?  MAIN FOLDER is CLICK SENSITIVE - All subfolders will skip cursor/jitter/idle/distraction features!")
-
+    
     for item in base.iterdir():
         if not item.is_dir():
             # Collect non-JSON files in root
             if not item.name.endswith('.json'):
                 non_json_files.append(item)
             continue
-
+        
         # Check for "Don't use features on me" folder (case-insensitive)
         # Also accepts old name "dont mess with me" for backward compatibility
         folder_name_lower = item.name.lower()
@@ -2354,7 +2380,7 @@ def scan_for_numbered_subfolders(base_path):
             unmodified_files.extend(dmwm_files)
             print(f"  [!]?  Found 'Don't use features on me' folder: {len(dmwm_files)} unmodified files")
             continue
-
+        
         # Extract folder number - prefer explicit F<N> prefix (F1, F2, F3.5, etc.)
         # so that other numbers in the name (e.g. 'press 1', 'optional-2-') are ignored.
         _f_match = re.match(r'^[Ff](\d+(?:\.\d+)?)', item.name.strip())
@@ -2366,7 +2392,7 @@ def scan_for_numbered_subfolders(base_path):
             folder_num = float(_n_match.group()) if _n_match else None
         if folder_num is not None:
             all_json_files = sorted(item.glob("*.json"))
-
+            
             # Separate "always first", "always last", and regular files
             # Collect ALL always_first/last variants into pools — one is chosen randomly per run
             always_first_pool = []
@@ -2385,14 +2411,14 @@ def scan_for_numbered_subfolders(base_path):
                     regular_files.append(json_file)
             always_first = always_first_pool  # store list; caller picks one randomly
             always_last  = always_last_pool
-
+            
             # Check if folder is "optional" (default 24-33%, or custom % from tag)
             is_optional = 'optional' in item.name.lower()
             optional_chance = parse_optional_chance(item.name) if is_optional else None
-
+            
             # Check if folder is "end" (becomes definitive end point)
             is_end = bool(re.search(r'\bend\b', item.name, re.IGNORECASE))
-
+            
             # Check if folder is "time sensitive" (1:1 raw:normal, no inef, minimal overhead)
             # Priority: Main folder tag > Individual subfolder tag
             if main_folder_time_sensitive:
@@ -2460,7 +2486,7 @@ def scan_for_numbered_subfolders(base_path):
             for file in item.iterdir():
                 if file.is_file() and not file.name.endswith('.' + 'json'):
                     non_json_files.append(file)
-
+    
     # FLAT FOLDER SUPPORT:
     # If no numbered subfolders were found, check if there are JSON files
     # sitting directly in the folder itself. If so, treat the folder as a
@@ -2468,11 +2494,11 @@ def scan_for_numbered_subfolders(base_path):
     # without any changes.
     if not numbered_folders:
         direct_json = sorted(base.glob('*.json'))
-
+        
         # Exclude logout files from the pool
         logout_names = {'logout.json', '- logout.json', '-logout.json'}
         direct_json = [f for f in direct_json if f.name.lower() not in logout_names]
-
+        
         if direct_json:
             # Separate always_first / always_last from regular files
             always_first_pool = []
@@ -2490,7 +2516,7 @@ def scan_for_numbered_subfolders(base_path):
                     regular_files.append(json_file)
             always_first = always_first_pool
             always_last  = always_last_pool
-
+            
             if regular_files:
                 print(f"   Flat folder detected - {len(regular_files)} file(s) treated as single pool (subfolder 1.0)")
                 numbered_folders[1.0] = {
@@ -2534,17 +2560,17 @@ def scan_for_numbered_subfolders(base_path):
 class ManualHistoryTracker:
     """
     Manual combination history - YOU upload combination files!
-
+    
     Folder: input_macros/combination_history/
-
+    
     Code reads ALL .txt files in that folder and ensures no duplicate combinations.
     You manually dump combination files from each bundle's output to this folder.
-
+    
     Files can be named anything, code reads them all:
     - COMBINATION_HISTORY_39.txt
     - combos_from_bundle_40.txt
     - anything.txt
-
+    
     All will be read and combined into one set of used combinations.
     """
     def __init__(self, subfolder_files, rng, folder_name, input_dir):
@@ -2552,10 +2578,10 @@ class ManualHistoryTracker:
         self.rng = rng
         self.folder_name = folder_name
         self.input_dir = input_dir
-
+        
         # History folder (not a single file!)
         self.history_dir = input_dir / "combination_history"
-
+        
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
 
@@ -2576,54 +2602,54 @@ class ManualHistoryTracker:
                 self._nested_trackers[fn] = ManualHistoryTracker(
                     nsf, self.rng, f"{self.folder_name}_nested_{fn}", self.input_dir
                 )
-
+        
         print(f"   {len(self.used_combinations)} combinations loaded from history")
         print(f"   History folder: {self.history_dir}")
-
+    
     def _load_all_combinations(self):
         """Read ALL .txt files in history folder and build set of used combos"""
         all_used = set()
-
+        
         if not self.history_dir.exists():
             print(f"   No history folder found (will skip tracking)")
             return all_used
-
+        
         # Read ALL .txt files
         txt_files = list(self.history_dir.glob("*.txt"))
         if not txt_files:
             print(f"   History folder empty (no .txt files)")
             return all_used
-
+        
         print(f"   Reading {len(txt_files)} history file(s)...")
-
+        
         for txt_file in txt_files:
             try:
                 with open(txt_file, 'r') as f:
                     for line in f:
                         line = line.strip()
-
+                        
                         # Skip empty lines and headers
                         if not line or line.startswith('[') or line.startswith('='):
                             continue
-
+                        
                         # Check if line is a combination (has F1=, F2=, etc.)
                         if 'F' in line and '=' in line and '|' in line:
                             # Extract just the folder name part if it's in [Folder: ...] format
                             if line.startswith('[') and ']' in line:
                                 continue  # Skip section headers
-
+                            
                             # This is a combination line
                             # Check if it matches current folder
                             # Format could be: F1=F1 (22).json|F2=F2 (39).json|F3=F3 (1).json
                             all_used.add(line)
-
+                
                 print(f"    [OK] {txt_file.name}: Loaded")
-
+                
             except Exception as e:
                 print(f"    [!]?  {txt_file.name}: Error - {e}")
-
+        
         return all_used
-
+    
     def _next_file(self, folder_num):
         """Return the next file from this subfolder's virtual queue.
         Refills and reshuffles when exhausted - no file repeats until all used.
@@ -2651,13 +2677,13 @@ class ManualHistoryTracker:
     def get_next_combination(self):
         """Get next unused combination (with end folder support)"""
         max_attempts = 500
-
+        
         for _ in range(max_attempts):
             # Pick random combination
             combination = []
             for folder_num in sorted(self.subfolder_files.keys()):
                 folder_data = self.subfolder_files[folder_num]
-
+                
                 # Check for "optional+end" combo (optional folder that ends loop if chosen)
                 if folder_data.get('is_optional_end', False):
                     optional_chance = folder_data.get('optional_chance', 0.50)
@@ -2669,20 +2695,20 @@ class ManualHistoryTracker:
                     else:
                         # Optional/end folder was skipped - continue to next folders
                         continue
-
+                
                 # Check for regular "end" folder (always included, always ends loop)
                 if folder_data.get('is_end', False) and not folder_data.get('is_optional', False):
                     # End folder - include it and STOP
                     _f = self._next_file(folder_num)
                     if _f: combination.append((folder_num, [_f]))
                     break  # End the loop here
-
+                
                 # Regular optional folder check (uses random 27-43% chance stored per folder)
                 if folder_data.get('is_optional', False):
                     optional_chance = folder_data.get('optional_chance', 0.50)
                     if self.rng.random() >= optional_chance:
                         continue
-
+                
                 # Nested folder: build sub-combinations instead of picking files
                 _nsf = folder_data.get('nested_subfolder_files')
                 _max = folder_data.get('max_files', 1)
@@ -2711,28 +2737,28 @@ class ManualHistoryTracker:
                             _picked.append(_f)
                     if _picked:
                         combination.append((folder_num, _picked))
-
+            
             if not combination:
                 continue
-
+            
             # Create signature (format folder numbers cleanly)
             signature = "|".join(
                 f"F{int(fn) if fn == int(fn) else fn}=" +
                 "+".join(fp.name if hasattr(fp, "name") else f"nested_{i}" for i, fp in enumerate(fl if isinstance(fl, list) else [fl]))
                 for fn, fl in combination
             )
-
+            
             # Check if unused
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)  # Mark as used
                 return combination
-
+        
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
-
+            
             # Handle optional+end
             if folder_data.get('is_optional_end', False):
                 optional_chance = folder_data.get('optional_chance', 0.50)
@@ -2742,23 +2768,23 @@ class ManualHistoryTracker:
                     break
                 else:
                     continue
-
+            
             # Handle regular end
             if folder_data.get('is_end', False) and not folder_data.get('is_optional', False):
                 files = folder_data['files']
                 _f = self._next_file(folder_num)
                 if _f: combination.append((folder_num, [_f]))
                 break
-
+            
             # Handle regular optional
             if folder_data.get('is_optional', False):
                 optional_chance = folder_data.get('optional_chance', 0.50)
                 if self.rng.random() >= optional_chance:
                     continue
-
+            
             _f = self._next_file(folder_num)
             if _f: combination.append((folder_num, [_f]))
-
+        
         return combination if combination else None
 
 
@@ -2797,6 +2823,143 @@ class VirtualDistQueue:
         return item
 
 
+
+
+# ============================================================================
+# LOGOUT SEQUENCE BUILDER (Feature 40)
+# ============================================================================
+
+def build_logout_sequence(folder_path, rng, out_path):
+    """
+    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
+
+    Expected files inside the folder (matched by keyword in filename,
+    case-insensitive):
+      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
+      - filename contains 'nothing' -> slot 2: idle file, receives random wait
+      - filename contains 'relogin' -> slot 3: re-login actions (played last)
+
+    Stringing order:
+      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
+           -> pre-play buffer (500-800 ms) -> slot3
+
+    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
+                 Float, never rounded — full millisecond precision.
+
+    No anti-detection features applied. filter_problematic_keys() runs on load.
+    Writes to out_path; caller should name it '- logout.json' so the existing
+    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
+
+    Returns out_path on success, None on failure.
+    """
+    json_files = sorted(folder_path.glob('*.json'))
+    if not json_files:
+        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
+        return None
+
+    # Identify the three slots by keyword in filename
+    slot1 = slot2 = slot3 = None
+    for f in json_files:
+        n = f.name.lower()
+        if 'proper' in n:
+            slot1 = f
+        elif 'nothing' in n:
+            slot2 = f
+        elif 'relogin' in n:
+            slot3 = f
+
+    missing = []
+    if slot1 is None:
+        missing.append("slot-1 logout (filename must contain 'proper')")
+    if slot2 is None:
+        missing.append("slot-2 wait (filename must contain 'nothing')")
+    if slot3 is None:
+        missing.append("slot-3 login (filename must contain 'relogin')")
+    if missing:
+        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
+        print(f"      Found files: {[f.name for f in json_files]}")
+        print(f"      Logout skipped.")
+        return None
+
+    # Load and normalise each file (time base = 0)
+    def _load(path):
+        try:
+            events = json.load(open(path, encoding='utf-8'))
+        except Exception as exc:
+            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
+            return None
+        if not events:
+            return None
+        events = filter_problematic_keys(events)
+        if not events:
+            return None
+        base = min(e.get('Time', 0) for e in events)
+        return [{**e, 'Time': e['Time'] - base} for e in events]
+
+    e1 = _load(slot1)
+    e2 = _load(slot2)
+    e3 = _load(slot3)
+
+    if not e1 or not e2 or not e3:
+        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
+        return None
+
+    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
+    merged   = []
+    timeline = 0.0
+
+    # Slot 1
+    dur1 = max(e.get('Time', 0) for e in e1)
+    for e in e1:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur1
+
+    # Pre-play buffer 1->2
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 2
+    dur2 = max(e.get('Time', 0) for e in e2)
+    for e in e2:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur2
+
+    # Random wait: 1 minute to 3 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    timeline += random_wait_ms
+
+    # Pre-play buffer 2->3
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 3
+    dur3 = max(e.get('Time', 0) for e in e3)
+    for e in e3:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur3
+
+    # Finalise: round times to int, sort
+    for e in merged:
+        e['Time'] = max(0, int(round(e['Time'])))
+    merged.sort(key=lambda e: e.get('Time', 0))
+
+    # Write to disk
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(merged, separators=(',', ':')))
+    except Exception as exc:
+        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
+        return None
+
+    total_min  = int(timeline / 60000)
+    total_sec  = int((timeline % 60000) / 1000)
+    wait_min   = int(random_wait_ms / 60000)
+    wait_sec   = int((random_wait_ms % 60000) / 1000)
+    print(f"  Built LOGOUT sequence:")
+    print(f"    1. {slot1.name}")
+    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
+    print(f"    3. {slot3.name}")
+    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
+    return out_path
+
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -2807,7 +2970,7 @@ def main():
     parser.add_argument("--no-chat", action="store_true", help="Disable chat inserts")
     parser.add_argument("--specific-folders", type=str, help="Path to file with specific folder names to include (one per line)")
     args = parser.parse_args()
-
+    
     print("="*70)
     print(f"STRING MACROS v{VERSION}")
     print("="*70)
@@ -2816,17 +2979,17 @@ def main():
     print(f"Versions: {args.versions} total (3 Raw + 3 Inef + 6 Normal)")
     print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (50% chance)'}")
     print("="*70)
-
+    
     # Setup
     search_base = Path(args.input_root).resolve()
     if not search_base.exists():
         print(f"[X] Input root not found: {search_base}")
         return
-
+    
     output_root = Path(args.output_root).resolve()
     bundle_dir = output_root / f"stringed_bundle_{args.bundle_id}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
-
+    
     # Load chat files
     chat_files = []
     if not args.no_chat:
@@ -2835,7 +2998,7 @@ def main():
             chat_files = list(chat_dir.glob("*.json"))
             if chat_files:
                 print(f"? Found {len(chat_files)} chat insert files")
-
+    
     # Scan for DISTRACTIONS trigger - accepts either:
     #   A) A folder named "DISTRACTIONS" (case-insensitive) containing >=1 .json
     #   B) A single file named "distraction_file.json" (or similar) at root level
@@ -2880,20 +3043,42 @@ def main():
             distractions_src = None
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
-
-    # Look for logout file
+    
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
+    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
+    # build_logout_sequence() strings its 3 files and writes the result to
+    # output_root/- logout.json, which the copy block below picks up unchanged.
+    # Falls back to the old static '- logout.json' search if the folder is absent.
     logout_file = None
-    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
-    for location_dir in [search_base, search_base.parent]:
-        if logout_file:
+    _logout_folder = None
+    for _d in search_base.iterdir():
+        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
+            _logout_folder = _d
             break
-        for pattern in logout_patterns:
-            test_file = location_dir / pattern
-            for test_path in [test_file, Path(str(test_file) + ".json")]:
-                if test_path.exists() and test_path.is_file():
-                    logout_file = test_path
-                    print(f"? Found logout file: {logout_file.name}")
-                    break
+
+    if _logout_folder:
+        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
+        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
+        _lo_dest = Path(args.output_root) / "- logout.json"
+        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
+        if _built:
+            logout_file = _built
+        else:
+            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+    else:
+        # Fallback: look for a static logout .json at root level
+        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
+                           "logout", "- logout", "-logout"]
+        for location_dir in [search_base, search_base.parent]:
+            if logout_file:
+                break
+            for pattern in logout_patterns:
+                test_file = location_dir / pattern
+                for test_path in [test_file, Path(str(test_file) + ".json")]:
+                    if test_path.exists() and test_path.is_file():
+                        logout_file = test_path
+                        print(f"? Found logout file: {logout_file.name}")
+                        break
 
     print()
 
@@ -2908,8 +3093,13 @@ def main():
         if folder.name.lower() == 'distractions':
             continue
 
+        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
+        # before the scan loop; should not be treated as a macro folder.
+        if folder.name.lower() == 'logout, wait, in':
+            continue
+        
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
-
+        
         # Add dmwm files to the appropriate numbered folder
         for dmwm_file in dmwm_file_set:
             # Try to determine which numbered folder it should belong to
@@ -2917,7 +3107,7 @@ def main():
             if 0 not in numbered_subfolders:
                 numbered_subfolders[0] = []
             numbered_subfolders[0].append(dmwm_file)
-
+        
         if numbered_subfolders:
             main_folders.append({
                 'path': folder,
@@ -2932,7 +3122,7 @@ def main():
             if numbered_subfolders:
                 nums = sorted([k for k in numbered_subfolders.keys() if k != 0])
                 print(f"  Subfolders: {nums}")
-
+                
                 # Show special folder types
                 special_folders = []
                 for num in nums:
@@ -2944,22 +3134,22 @@ def main():
                             special_folders.append(f"{num} (end)")
                         elif folder_info.get('is_optional'):
                             special_folders.append(f"{num} (optional)")
-
+                        
                         # Also mark time_sensitive folders
                         if folder_info.get('is_time_sensitive'):
                             special_folders.append(f"{num} (time sensitive)")
-
+                
                 if special_folders:
                     print(f"  Special: {', '.join(special_folders)}")
             if dmwm_file_set:
                 print(f"  Unmodified: {len(dmwm_file_set)} files (added to pool)")
             if non_json_files:
                 print(f"  Non-JSON: {len(non_json_files)} files")
-
+    
     if not main_folders:
         print("[X] No folders with numbered subfolders found!")
         return
-
+    
     # Filter by specific folders (and optionally specific subfolders) if provided
     # File format (one entry per line):
     #   FolderName                     -> include that folder, ALL its subfolders
@@ -3101,17 +3291,17 @@ def main():
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
                 print(f"\n[!]?  Specific folders file is empty, processing ALL folders")
-
+        
         except FileNotFoundError:
             print(f"\n[X] Specific folders file not found: {args.specific_folders}")
             return
         except Exception as e:
             print(f"\n[X] Error reading specific folders file: {e}")
             return
-
+    
     print(f"\n Total folders to process: {len(main_folders)}")
     print("="*70)
-
+    
     # Initialize global chat queue
     rng = random.Random(args.bundle_id * 42)
     global_chat_queue = list(chat_files) if chat_files else []
@@ -3119,7 +3309,7 @@ def main():
         rng.shuffle(global_chat_queue)
         print(f" Initialized global chat queue with {len(global_chat_queue)} files")
         print()
-
+    
     # Track ALL combinations for the bundle (one file at root level)
     bundle_combinations = {}  # {folder_name: [combination_signatures]}
 
@@ -3156,15 +3346,15 @@ def main():
         # - Raw files:         0%          (never)
         folder_dist_chance_normal = rng.uniform(3.5,  5.0) / 100.0 if distraction_files else 0.0
         folder_dist_chance_inef   = rng.uniform(3.5,  7.0) / 100.0 if distraction_files else 0.0
-
+        
         # D_ REMOVAL
         cleaned_folder_name = re.sub(r'[Dd]_', '', folder_name)
-
+        
         # Extract folder number
         folder_num_match = re.search(r'\d+', cleaned_folder_name)
         folder_number = int(folder_num_match.group()) if folder_num_match else 0
-
-
+        
+        
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
         if args.specific_folders:
@@ -3172,7 +3362,7 @@ def main():
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
-
+        
         # Copy logout file with @ prefix
         if logout_file:
             try:
@@ -3185,7 +3375,7 @@ def main():
                 print(f"  ? Copied logout: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying logout: {e}")
-
+        
         # Copy non-JSON files with @ prefix
         for non_json_file in non_json_files:
             try:
@@ -3198,20 +3388,20 @@ def main():
                 print(f"  ? Copied non-JSON: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying {non_json_file.name}: {e}")
-
+        
         if not subfolder_files:
             print("  [!]?  No numbered subfolders to process")
             continue
-
+        
         # Use bundle-organized tracker
         tracker = ManualHistoryTracker(
             subfolder_files, rng, cleaned_folder_name, search_base
         )
         target_ms = args.target_minutes * 60000
-
+        
         # Track all combinations used in THIS RUN for this folder
         folder_combinations_used = []
-
+        
         # Calculate total original duration
         # Detect "copied" subfolders: subfolders whose file-name sets are identical
         # (e.g. F1-mine and F2-mine with same files). Count their files only once
@@ -3239,7 +3429,7 @@ def main():
                     total_original_files += 1
                     total_original_ms += get_file_duration_ms(f)
 
-
+        
         # Build subfolder file count lines for manifest
         _subfolder_lines = []
         for _fn in sorted(subfolder_files.keys()):
@@ -3282,22 +3472,22 @@ def main():
              if num_copied_folders > 0
              else f"Total Original Files Duration: {format_ms_precise(total_original_ms)}"),
         ] + _subfolder_lines + [""]
-
+        
         # Check if any folders are 'time sensitive' (no inefficient files)
         has_time_sensitive = any(
-            folder_data.get('is_time_sensitive', False)
+            folder_data.get('is_time_sensitive', False) 
             for folder_data in subfolder_files.values()
         )
-
+        
         # Debug: Show which folders are time_sensitive
         if has_time_sensitive:
             time_sensitive_folders = [
                 str(int(num) if num == int(num) else num)
-                for num, data in subfolder_files.items()
+                for num, data in subfolder_files.items() 
                 if data.get('is_time_sensitive', False)
             ]
             print(f"  ??  TIME SENSITIVE folders detected: {', '.join(time_sensitive_folders)}")
-
+        
         # Version loop: 3 Raw + 3 Inef + 6 Normal = 12 total
         # OR: 3 Raw + 0 Inef + 9 Normal = 12 total (if time_sensitive)
         def get_version_letter(idx):
@@ -3335,7 +3525,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.74"
+VERSION = "v3.18.79"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3432,7 +3622,7 @@ These features add natural pauses and delays to prevent robotic timing patterns.
    Purpose: Simulates AFK/distracted behavior
    Code: Line ~1171-1220 (insert_massive_pause with drag protection)
    Manifest: "INEFFICIENT MASSIVE PAUSE: Xm Xs"
-
+   
    BUG FIX (v3.15.2): Added check to prevent pause insertion immediately before
    DragStart events. Previously, pauses could be inserted right before DragStart,
    which shifted the DragEnd forward in time, making clicks appear to last 1-4
@@ -3445,15 +3635,15 @@ These features add natural pauses and delays to prevent robotic timing patterns.
      Raw Files:
        - x1.0 (50% probability)
        - x1.1 (50% probability)
-
+     
      Normal Files:
        - x1.3 (65% probability)
        - x1.5 (35% probability)
-
+     
      Inefficient Files:
        - x2.0 (60% probability)
        - x3.0 (40% probability)
-
+   
    Purpose: Varied timing patterns across output files
    Code: Line ~1918-1927 (multiplier selection)
    Manifest: "(xN Multiplier)" shown in each file header
@@ -3623,7 +3813,7 @@ These features ensure files play correctly without breaking or causing errors.
 10. 'OPTIONAL+END' COMBO TAGGED FOLDERS
     Status: [OK] ACTIVE (If both "optional" and "end" in name)
     Tag Detection: Both "optional" AND "end" in folder name
-    Behavior:
+    Behavior: 
       - Chance to include folder (same custom % syntax as Feature 8)
       - IF included: Loop stops at this folder
       - IF skipped: Loop continues to next folders
@@ -3639,7 +3829,7 @@ These features ensure files play correctly without breaking or causing errors.
     New Feature: v3.13.0 | Enhanced: v3.14.2 | Ratio updated: v3.18.32
     Tag Detection: "time sensitive" anywhere in folder name (case-insensitive)
     Behavior: NO inefficient files generated; 1:1 raw:normal ratio
-
+    
     Two Application Modes:
       A) MAIN FOLDER TAGGED:
          Example: "61- Mining TIME SENSITIVE/"
@@ -3647,18 +3837,18 @@ These features ensure files play correctly without breaking or causing errors.
                     ??? 2- mine/
                     ??? 3- bank/
          Result: ALL subfolders (1, 2, 3) become time_sensitive
-
+         
       B) INDIVIDUAL SUBFOLDER TAGGED:
          Example: "61- Mining/"
                     ??? 1- setup/
                     ??? 2 time sensitive- mine/  ? Only this one
                     ??? 3- bank/
          Result: Only subfolder 2 is time_sensitive
-
+    
     File Distribution Changes:
       - Regular folder: 2 Raw + 3 Inef + 7 Normal = 12 files (2:3:7 ratio)
       - Time sensitive: 6 Raw + 0 Inef + 6 Normal = 12 files (1:1 ratio)
-
+    
     Priority: Main folder tag overrides individual subfolder tags
     Purpose: Activities requiring consistent timing (combat, PvP, timed tasks)
     Code: scan_for_numbered_subfolders() - main_folder_time_sensitive propagation
@@ -3678,7 +3868,7 @@ These features ensure files play correctly without breaking or causing errors.
       - Within-file pauses (time-based, no coord changes)
       - Pre-play buffer (timing only)
       - Rapid click detection / drag protection
-
+    
     Two Application Modes:
       A) MAIN FOLDER TAGGED:
          Example: "18- WC- draynor CLICK SENSITIVE/"
@@ -3687,7 +3877,7 @@ These features ensure files play correctly without breaking or causing errors.
          Example: "18- WC- draynor/"
                     ??? 2 click sensitive- click tree/
          Result: Only subfolder 2 is click-sensitive
-
+    
     Accepted tag variants (all case-insensitive):
       "click sensitive", "click/time sensitive", "click+time sensitive"
     Purpose: Activities where cursor must stay at exact recorded coordinates
@@ -3720,21 +3910,21 @@ These features ensure files play correctly without breaking or causing errors.
     Status: [OK] ACTIVE (If tagged in filename)
     Tag Detection: "always first", "alwaysfirst", "always last", "alwayslast"
     Location: In filename (case-insensitive)
-
+    
     Two Modes (auto-detected by folder structure):
-
+    
       A) MULTI-SUBFOLDER MODE (2+ numbered subfolders):
          Original behaviour. always_first/last wrap every selected file, every cycle.
          Pattern per file slot: [ALWAYS FIRST] -> selected file -> [ALWAYS LAST]
          Use case: Opener/closer needed around each action step (e.g. login per step)
-
+    
       B) SINGLE-SUBFOLDER MODE (1 subfolder OR flat folder):
          always_first plays once at the very beginning of the strung file.
          always_last plays once at the very end of the strung file.
          All selected files play in sequence in between.
          Pattern: [ALWAYS FIRST] -> file1 -> file2 -> file3 -> ... -> [ALWAYS LAST]
          Use case: Global opener/closer (e.g. login once, do N actions, logout once)
-
+    
     Examples:
       "setup_always_first.json"   -> plays at start
       "cleanup_alwayslast.json"   -> plays at end
@@ -4011,13 +4201,13 @@ def filter_problematic_keys(events: list) -> list:
     """
     problematic_codes = {19, 33, 34, 35, 36, 44}  # ESC(27) removed - valid in-game action
     filtered = []
-
+    
     for event in events:
         keycode = event.get('KeyCode')
         if keycode in problematic_codes:
             continue
         filtered.append(event)
-
+    
     return filtered
 
 def parse_optional_chance(folder_name: str) -> float:
@@ -4092,24 +4282,18 @@ def parse_max_files(folder_name: str) -> int:
 def fix_click_events(events: list) -> list:
     """
     Convert 'Click' events to LeftDown+LeftUp pairs.
-    Also convert short-duration DragStart->DragEnd pairs (same position) to LeftDown+LeftUp.
     This prevents the mouse from clamping down and dragging.
-
+    
     CRITICAL FIX from merge_macros.py!
-    v3.18.74: Added DragStart/DragEnd conversion for quick clicks (<150ms, same pos)
     """
     fixed = []
-    i = 0
-    while i < len(events):
-        event = events[i]
-        event_type = event.get('Type')
-
-        if event_type == 'Click':
+    for event in events:
+        if event.get('Type') == 'Click':
             # Replace Click with LeftDown + LeftUp pair
             time = event.get('Time', 0)
             x = event.get('X')
             y = event.get('Y')
-
+            
             # LeftDown at same time
             left_down = {
                 'Type': 'LeftDown',
@@ -4119,7 +4303,7 @@ def fix_click_events(events: list) -> list:
                 left_down['X'] = x
             if y is not None:
                 left_down['Y'] = y
-
+            
             # LeftUp 10-20ms later (small random delay)
             left_up = {
                 'Type': 'LeftUp',
@@ -4129,114 +4313,48 @@ def fix_click_events(events: list) -> list:
                 left_up['X'] = x
             if y is not None:
                 left_up['Y'] = y
-
+            
             fixed.append(left_down)
             fixed.append(left_up)
-            i += 1
-
-        elif event_type == 'DragStart':
-            # Check if this DragStart is followed by a DragEnd quickly (quick click)
-            # Look ahead for matching DragEnd
-            found_drag_end = False
-            drag_end_idx = -1
-            for j in range(i + 1, min(i + 5, len(events))):
-                if events[j].get('Type') == 'DragEnd':
-                    found_drag_end = True
-                    drag_end_idx = j
-                    break
-
-            if found_drag_end:
-                drag_start_time = event.get('Time', 0)
-                drag_end_time = events[drag_end_idx].get('Time', 0)
-                drag_duration = drag_end_time - drag_start_time
-                drag_start_x = event.get('X')
-                drag_start_y = event.get('Y')
-                drag_end_x = events[drag_end_idx].get('X')
-                drag_end_y = events[drag_end_idx].get('Y')
-
-                # Check if this is a quick click: <150ms AND same/near position
-                same_position = (drag_start_x == drag_end_x and drag_start_y == drag_end_y)
-                near_position = (drag_start_x is not None and drag_end_x is not None
-                                and abs(drag_start_x - drag_end_x) <= 3
-                                and abs(drag_start_y - drag_end_y) <= 3)
-
-                if drag_duration < 150 and (same_position or near_position):
-                    # Convert to LeftDown + LeftUp pair
-                    left_down = {
-                        'Type': 'LeftDown',
-                        'Time': drag_start_time,
-                    }
-                    if drag_start_x is not None:
-                        left_down['X'] = drag_start_x
-                    if drag_start_y is not None:
-                        left_down['Y'] = drag_start_y
-
-                    # LeftUp 10-20ms later, or use original duration if longer
-                    up_delay = max(random.randint(10, 20), min(drag_duration, 30))
-                    left_up = {
-                        'Type': 'LeftUp',
-                        'Time': drag_start_time + up_delay,
-                    }
-                    if drag_start_x is not None:
-                        left_up['X'] = drag_start_x
-                    if drag_start_y is not None:
-                        left_up['Y'] = drag_start_y
-
-                    fixed.append(left_down)
-                    fixed.append(left_up)
-                    i = drag_end_idx + 1  # Skip past the DragEnd
-                    continue
-
-            # Not a quick click - keep DragStart as-is
-            fixed.append(event)
-            i += 1
-
-        elif event_type == 'DragEnd':
-            # Standalone DragEnd (no matching DragStart before it) - keep as-is
-            # This should not happen normally, but handle gracefully
-            fixed.append(event)
-            i += 1
-
         else:
             # Keep all other events as-is
             fixed.append(event)
-            i += 1
-
+    
     return fixed
 
 def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     """
     Generate a human-like mouse path with variable speed, path styles, and wobbles.
-
+    
     Path Styles:
     - Efficient: Direct path, few curves, faster
     - Meandering: Curved path, more wandering, varied speed
     - Hesitant: Slow start, acceleration, deceleration
     - Swift: Fast throughout, minimal curves
-
+    
     Speed Variations:
     - Very fast: 100-200ms typical
     - Fast: 200-300ms typical
     - Normal: 300-500ms typical
     - Slow: 500-700ms typical
     - Very slow: 700-1000ms typical
-
+    
     Returns: List of (time_ms, x, y) tuples.
     """
     if duration_ms < 100:
         return [(0, end_x, end_y)]
-
+    
     path = []
     dx = end_x - start_x
     dy = end_y - start_y
     distance = math.sqrt(dx**2 + dy**2)
-
+    
     if distance < 5:
         return [(0, end_x, end_y)]
-
+    
     # Choose path style (determines curvature and speed pattern)
     path_style = rng.choice(['efficient', 'meandering', 'hesitant', 'swift'])
-
+    
     # Determine num_steps based on distance and path style
     if path_style == 'efficient':
         # Direct, fewer steps
@@ -4250,7 +4368,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
     else:  # hesitant
         # Medium steps
         num_steps = max(4, min(int(distance / 15), int(duration_ms / 50)))
-
+    
     # Add control points based on path style
     if path_style == 'efficient':
         # Few or no control points (straighter path)
@@ -4268,7 +4386,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         # Medium control points
         num_control = rng.randint(1, 2)
         offset_range = 0.25
-
+    
     control_points = []
     for _ in range(num_control):
         offset = rng.uniform(-offset_range, offset_range) * distance
@@ -4276,13 +4394,13 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         ctrl_x = start_x + dx * t + (-dy / (distance + 1)) * offset
         ctrl_y = start_y + dy * t + (dx / (distance + 1)) * offset
         control_points.append((ctrl_x, ctrl_y, t))
-
+    
     control_points.sort(key=lambda p: p[2])
     current_time = 0
-
+    
     for step in range(num_steps + 1):
         t_raw = step / num_steps
-
+        
         # Apply speed profile based on path style
         if path_style == 'efficient':
             # Smooth acceleration
@@ -4296,7 +4414,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         else:  # hesitant
             # Slow start, fast middle, slow end
             t = 0.5 * (1 - math.cos(t_raw * math.pi))
-
+        
         # Calculate position
         if not control_points:
             x = start_x + dx * t
@@ -4316,7 +4434,7 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
                         y = ctrl_y + (end_y - ctrl_y) * segment_t
                     else:
                         start_x, start_y = ctrl_x, ctrl_y
-
+        
         # Add wobble (less for swift, more for meandering)
         if path_style == 'swift':
             wobble = rng.uniform(0, 2) if step > 0 and step < num_steps else 0
@@ -4324,18 +4442,18 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
             wobble = rng.uniform(1, 7) if step > 0 and step < num_steps else 0
         else:
             wobble = rng.uniform(1, 5) if step > 0 and step < num_steps else 0
-
+        
         x += rng.uniform(-wobble, wobble)
         y += rng.uniform(-wobble, wobble)
-
+        
         # Bounds
         x = max(100, min(1800, int(x)))
         y = max(100, min(1000, int(y)))
-
+        
         step_time = int(t * duration_ms)
         current_time = max(current_time, step_time)
         path.append((current_time, x, y))
-
+    
     return path
 
 # ============================================================================
@@ -4362,17 +4480,17 @@ def is_in_drag_sequence(events, index, drag_indices=None):
         elif event_type == "DragStart":
             drag_started = True
             break
-
+    
     if not drag_started:
         return False
-
+    
     for j in range(index + 1, len(events)):
         event_type = events[j].get("Type", "")
         if event_type == "DragEnd":
             return True
         elif event_type == "DragStart":
             return False
-
+    
     return False
 
 
@@ -4396,65 +4514,65 @@ def build_drag_index_set(events) -> set:
 def detect_rapid_click_sequences(events):
     """
     Detect sequences of rapid clicks at similar coordinates.
-
+    
     Detects:
     - Double clicks (2 clicks within 500ms, +/-5 pixels)
     - Spam clicks (3+ clicks within 2 seconds, +/-10 pixels)
-
+    
     Returns list of protected ranges: [(start_idx, end_idx), ...]
     These ranges should NOT have pauses/gaps inserted between them.
     """
     if not events or len(events) < 2:
         return []
-
+    
     protected_ranges = []
-
+    
     i = 0
     while i < len(events):
         event = events[i]
-
+        
         # Check Click and DragStart events (both are click actions)
         event_type = event.get("Type")
         if event_type not in ("Click", "DragStart"):
             i += 1
             continue
-
+        
         # Found a click, look for nearby clicks
         click_sequence = [i]
         first_time = event.get("Time", 0)
         first_x = event.get("X")
         first_y = event.get("Y")
-
+        
         if first_x is None or first_y is None:
             i += 1
             continue
-
+        
         # Look ahead for more clicks
         j = i + 1
         while j < len(events):
             next_event = events[j]
             next_time = next_event.get("Time", 0)
-
+            
             # Stop looking if too far in time (2 seconds max)
             if next_time - first_time > 2000:
                 break
-
+            
             # Check if it's a click or drag
             next_type = next_event.get("Type")
             if next_type in ("Click", "DragStart"):
                 next_x = next_event.get("X")
                 next_y = next_event.get("Y")
-
+                
                 if next_x is not None and next_y is not None:
                     # Calculate distance from first click
                     dist = ((next_x - first_x) ** 2 + (next_y - first_y) ** 2) ** 0.5
-
+                    
                     # If within 10 pixels, part of sequence
                     if dist <= 10:
                         click_sequence.append(j)
-
+            
             j += 1
-
+        
         # If found 2+ clicks, protect the sequence
         if len(click_sequence) >= 2:
             start_idx = click_sequence[0]
@@ -4463,7 +4581,7 @@ def detect_rapid_click_sequences(events):
             i = end_idx + 1
         else:
             i += 1
-
+    
     return protected_ranges
 
 
@@ -4478,21 +4596,21 @@ def is_in_protected_range(index, protected_ranges):
 def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
     """
     SMART JITTER SYSTEM v3.9.0
-
+    
     Add realistic micro-movements to 9-21% of TOTAL file movements.
     CRITICAL: NO jitter within 1 second before/after ANY click!
-
+    
     Rules:
     1. Jitter percentage: 9-21% of total MouseMove events
     2. Exclusion zone: 1000ms before AND after any click
     3. Only jitter MouseMove events (never Click, DragStart, RightDown, etc.)
     4. Jitter = 2-3 micro-movements (+/-1-3px) + final snap to exact position
-
+    
     Returns (events_with_jitter, jitter_count, total_moves, jitter_percentage).
     """
     if not events or len(events) < 2:
         return events, 0, 0, 0.0
-
+    
     # Step 1: Find ALL click times (any click-like event)
     click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
     click_times_sorted = sorted(
@@ -4524,71 +4642,71 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
 
             if is_safe:
                 safe_movements.append((i, event))
-
+    
     # Step 3: Calculate how many jitters to add (9-21% of TOTAL movements)
     jitter_percentage = rng.uniform(0.09, 0.21)
     target_jitters = int(total_moves * jitter_percentage)
-
+    
     # Can't jitter more than safe movements available
     target_jitters = min(target_jitters, len(safe_movements))
-
+    
     if target_jitters == 0:
         return events, 0, total_moves, jitter_percentage
-
+    
     # Step 4: Randomly select which safe movements get jitter
     movements_to_jitter = rng.sample(safe_movements, target_jitters)
-
+    
     # Sort by index (descending) so we insert from end to start
     # This prevents index shifting issues
     movements_to_jitter.sort(key=lambda x: x[0], reverse=True)
-
+    
     # Step 5: Add jitter to selected movements
     jitter_count = 0
-
+    
     for idx, event in movements_to_jitter:
         move_x = event.get('X')
         move_y = event.get('Y')
         move_time = event.get('Time')
-
+        
         if move_x is None or move_y is None or move_time is None:
             continue
-
+        
         # Generate 2-3 micro-movements
         num_jitters = rng.randint(2, 3)
         jitter_events = []
-
+        
         # Time budget: 100-200ms total
         time_budget = rng.randint(100, 200)
         time_per_jitter = time_budget // (num_jitters + 1)
-
+        
         # Cap time_budget so jitter events never go before t=0
         if move_time - time_budget < 0:
             time_budget = max(0, int(move_time) - 1)
         if time_budget == 0:
             continue  # Not enough room before this event - skip jitter
         current_time = move_time - time_budget
-
+        
         # Add jitter movements (+/-1-3 pixels)
         for j in range(num_jitters):
             offset_x = rng.randint(-3, 3)
             offset_y = rng.randint(-3, 3)
-
+            
             jitter_x = int(move_x) + offset_x
             jitter_y = int(move_y) + offset_y
-
+            
             # Bounds check
             jitter_x = max(100, min(1800, jitter_x))
             jitter_y = max(100, min(1000, jitter_y))
-
+            
             jitter_events.append({
                 'Type': 'MouseMove',
                 'Time': current_time,
                 'X': jitter_x,
                 'Y': jitter_y
             })
-
+            
             current_time += time_per_jitter
-
+        
         # Final movement: snap to EXACT target position
         jitter_events.append({
             'Type': 'MouseMove',
@@ -4596,13 +4714,13 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
             'X': int(move_x),
             'Y': int(move_y)
         })
-
+        
         # Insert jitter events BEFORE the original movement
         for jitter_idx, jitter_event in enumerate(jitter_events):
             events.insert(idx + jitter_idx, jitter_event)
-
+        
         jitter_count += 1
-
+    
     return events, jitter_count, total_moves, jitter_percentage
 
 def insert_intra_file_pauses(events: list, rng: random.Random,
@@ -4707,12 +4825,12 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     continue
                 if i in click_proximity:
                     continue
-
+                
                 # Calculate active window
                 active_duration = int(gap * movement_percentage)
                 buffer_start = (gap - active_duration) // 2
                 movement_start = current_time + buffer_start
-
+                
                 # Get start position
                 start_x, start_y = 500, 500
                 for j in range(i, -1, -1):
@@ -4722,7 +4840,7 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         start_x = int(x_val)
                         start_y = int(y_val)
                         break
-
+                
                 # Get next position (where we need to end up)
                 next_x, next_y = start_x, start_y
                 for j in range(i + 1, min(i + 20, len(events))):
@@ -4732,11 +4850,11 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         next_x = int(x_val)
                         next_y = int(y_val)
                         break
-
+                
                 # Reserve last 25% for smooth transition back
                 transition_duration = int(active_duration * 0.25)
                 pattern_duration = active_duration - transition_duration
-
+                
                 # Choose movement behavior
                 behavior = rng.choice([
                     'wander',      # Random wandering around
@@ -4746,27 +4864,27 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     'drift',       # Slow meandering
                     'scan'         # Move across screen
                 ])
-
+                
                 pattern_end_x, pattern_end_y = start_x, start_y
                 pattern_time_used = 0
-
+                
                 if behavior == 'wander':
                     # Random wandering - multiple small moves
                     num_moves = rng.randint(3, 6)
                     move_duration = pattern_duration // num_moves
-
+                    
                     current_x, current_y = start_x, start_y
-
+                    
                     for move_idx in range(num_moves):
                         # Pick random nearby target
                         target_x = current_x + rng.randint(-150, 150)
                         target_y = current_y + rng.randint(-100, 100)
                         target_x = max(100, min(1800, target_x))
                         target_y = max(100, min(1000, target_y))
-
+                        
                         # Generate human path
                         path = generate_human_path(current_x, current_y, target_x, target_y, move_duration, rng)
-
+                        
                         for path_time, px, py in path:
                             abs_time = movement_start + pattern_time_used + path_time
                             result.append({
@@ -4775,12 +4893,12 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                                 "X": px,
                                 "Y": py
                             })
-
+                        
                         current_x, current_y = path[-1][1], path[-1][2]
                         pattern_time_used += move_duration
-
+                    
                     pattern_end_x, pattern_end_y = current_x, current_y
-
+                
                 elif behavior == 'check_edge':
                     # Quick look at screen edge then back
                     edges = [
@@ -4790,108 +4908,108 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                         (start_x, 950),    # Bottom edge
                     ]
                     edge_x, edge_y = rng.choice(edges)
-
+                    
                     # Move to edge (60% of time, fast)
                     edge_duration = int(pattern_duration * 0.6)
                     path_to_edge = generate_human_path(start_x, start_y, edge_x, edge_y, edge_duration, rng)
-
+                    
                     for path_time, px, py in path_to_edge:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     # Return near start (40% of time, slower)
                     return_duration = pattern_duration - edge_duration
                     return_x = start_x + rng.randint(-40, 40)
                     return_y = start_y + rng.randint(-40, 40)
                     return_x = max(100, min(1800, return_x))
                     return_y = max(100, min(1000, return_y))
-
+                    
                     path_return = generate_human_path(edge_x, edge_y, return_x, return_y, return_duration, rng)
-
+                    
                     for path_time, px, py in path_return:
                         abs_time = movement_start + edge_duration + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path_return[-1][1], path_return[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'fidget':
                     # Small rapid movements in small area
                     num_fidgets = rng.randint(5, 10)
                     fidget_duration = pattern_duration // num_fidgets
-
+                    
                     current_x, current_y = start_x, start_y
-
+                    
                     for fidget_idx in range(num_fidgets):
                         # Small offset
                         target_x = current_x + rng.randint(-30, 30)
                         target_y = current_y + rng.randint(-30, 30)
                         target_x = max(100, min(1800, target_x))
                         target_y = max(100, min(1000, target_y))
-
+                        
                         path = generate_human_path(current_x, current_y, target_x, target_y, fidget_duration, rng)
-
+                        
                         for path_time, px, py in path:
                             abs_time = movement_start + pattern_time_used + path_time
                             result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                        
                         current_x, current_y = path[-1][1], path[-1][2]
                         pattern_time_used += fidget_duration
-
+                    
                     pattern_end_x, pattern_end_y = current_x, current_y
-
+                
                 elif behavior == 'explore':
                     # Move far away then return near start
                     away_x = start_x + rng.randint(-400, 400)
                     away_y = start_y + rng.randint(-300, 300)
                     away_x = max(100, min(1800, away_x))
                     away_y = max(100, min(1000, away_y))
-
+                    
                     # Go away (65% of time)
                     away_duration = int(pattern_duration * 0.65)
                     path_away = generate_human_path(start_x, start_y, away_x, away_y, away_duration, rng)
-
+                    
                     for path_time, px, py in path_away:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     # Return (35% of time)
                     return_duration = pattern_duration - away_duration
                     return_x = start_x + rng.randint(-15, 15)
                     return_y = start_y + rng.randint(-15, 15)
                     return_x = max(100, min(1800, return_x))
                     return_y = max(100, min(1000, return_y))
-
+                    
                     path_return = generate_human_path(away_x, away_y, return_x, return_y, return_duration, rng)
-
+                    
                     for path_time, px, py in path_return:
                         abs_time = movement_start + away_duration + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path_return[-1][1], path_return[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'drift':
                     # Slow continuous drift
                     target_x = start_x + rng.randint(-200, 200)
                     target_y = start_y + rng.randint(-150, 150)
                     target_x = max(100, min(1800, target_x))
                     target_y = max(100, min(1000, target_y))
-
+                    
                     path = generate_human_path(start_x, start_y, target_x, target_y, pattern_duration, rng)
-
+                    
                     for path_time, px, py in path:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path[-1][1], path[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 elif behavior == 'scan':
                     # Scan across screen
                     scan_distance = rng.randint(300, 600)
                     direction = rng.choice(['horizontal', 'vertical', 'diagonal'])
-
+                    
                     if direction == 'horizontal':
                         target_x = start_x + (scan_distance if rng.random() < 0.5 else -scan_distance)
                         target_y = start_y + rng.randint(-50, 50)
@@ -4901,19 +5019,19 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     else:  # diagonal
                         target_x = start_x + (scan_distance if rng.random() < 0.5 else -scan_distance)
                         target_y = start_y + (scan_distance if rng.random() < 0.5 else -scan_distance)
-
+                    
                     target_x = max(100, min(1800, target_x))
                     target_y = max(100, min(1000, target_y))
-
+                    
                     path = generate_human_path(start_x, start_y, target_x, target_y, pattern_duration, rng)
-
+                    
                     for path_time, px, py in path:
                         abs_time = movement_start + path_time
                         result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                    
                     pattern_end_x, pattern_end_y = path[-1][1], path[-1][2]
                     pattern_time_used = pattern_duration
-
+                
                 # Smooth transition back to next recorded position
                 transition_path = generate_human_path(
                     pattern_end_x, pattern_end_y,
@@ -4921,13 +5039,13 @@ def insert_idle_mouse_movements(events, rng, movement_percentage):
                     transition_duration,
                     rng
                 )
-
+                
                 for path_time, px, py in transition_path:
                     abs_time = movement_start + pattern_duration + path_time
                     result.append({"Time": abs_time, "Type": "MouseMove", "X": px, "Y": py})
-
+                
                 total_idle_time += active_duration
-
+    
     return result, total_idle_time
 
 class QueueFileSelector:
@@ -4949,12 +5067,12 @@ class QueueFileSelector:
         target_min = target_ms - margin
         target_max = target_ms + margin
         actual_force = force_inef if not is_time_sensitive else False
-
+        
         # Keep adding files until we reach target
         # Stop conditions:
         # 1. Reached target OR
         # 2. Adding next file would overshoot by more than 4 minutes
-
+        
         while cur_ms < target_max:
             # Try to get next file
             if actual_force and self.ineff_pool: pick = self.ineff_pool.pop(0)
@@ -4964,9 +5082,9 @@ class QueueFileSelector:
                 pick = self.eff_pool.pop(0)
             elif self.ineff_pool and not is_time_sensitive: pick = self.ineff_pool.pop(0)
             else: break  # No more files
-
+            
             file_duration = self.durations.get(pick, 500)
-
+            
             # File selector multiplier - CRITICAL for accuracy
             # 1.0x = too many files (overshoot 11-18 min)
             # 1.8x = too few files (undershoot 10-13 min)
@@ -4975,11 +5093,11 @@ class QueueFileSelector:
                 estimated_time = file_duration * 1.05  # TIME SENSITIVE: minimal overhead
             else:
                 estimated_time = file_duration * 1.35  # NORMAL: balanced estimate
-
+            
             # Check if adding would overshoot too much
             potential_total = cur_ms + estimated_time
             overshoot = potential_total - target_ms
-
+            
             if overshoot > margin:  # Would overshoot beyond acceptable margin
                 # Only skip if we're already reasonably close to target
                 if cur_ms >= (target_ms - (4 * 60000)):  # Within 4 min of target
@@ -4992,11 +5110,11 @@ class QueueFileSelector:
                 # Safe to add (won't overshoot by more than 4 min)
                 seq.append(pick)
                 cur_ms += estimated_time
-
+            
             # Safety limits
             if len(seq) > 800: break
             if cur_ms > target_ms * 3: break
-
+        
         return seq
 
 
@@ -5005,23 +5123,23 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
     """
     Insert one massive pause (500-2900ms x multiplier) at random point.
     For INEFFICIENT files only.
-
+    
     EXCLUDES pause from:
     - Drag sequences (between DragStart and DragEnd)
     - Rapid click sequences (double-clicks, spam clicks)
     - First/last 10% of file (for safety)
-
+    
     Returns (events_with_pause, pause_duration_ms, split_index)
     """
     if not events or len(events) < 10:
         return events, 0, 0
-
+    
     # Generate massive pause: 4-7 minutes (240000-420000ms) x multiplier
     pause_duration = int(rng.uniform(240000.0, 420000.0))  # no mult — flat 4-7 min
-
+    
     # Detect protected ranges (rapid clicks, double-clicks)
     protected_ranges = detect_rapid_click_sequences(events)
-
+    
     # Precompute drag membership O(n) -> O(1) lookups
     drag_indices = build_drag_index_set(events)
 
@@ -5029,7 +5147,7 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
     safe_indices = []
     first_safe = int(len(events) * 0.1)  # Skip first 10%
     last_safe = int(len(events) * 0.9)   # Skip last 10%
-
+    
     for i in range(first_safe, last_safe):
         if i in drag_indices:
             continue
@@ -5041,18 +5159,18 @@ def insert_massive_pause(events: list, rng: random.Random, mult: float = 1.0) ->
         if i + 1 < len(events) and (i + 1) in drag_indices:
             continue
         safe_indices.append(i)
-
+    
     # If no safe indices found, return original events
     if not safe_indices:
         return events, 0, 0
-
+    
     # Pick random safe split point
     split_index = rng.choice(safe_indices)
-
+    
     # Shift all events after split point
     for i in range(split_index + 1, len(events)):
         events[i]["Time"] += pause_duration
-
+    
     return events, pause_duration, split_index
 
 # ============================================================================
@@ -5077,21 +5195,21 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                         file between each pair of folder transitions.
     is_click_sensitive: if True, skip cursor pathing between files (no coord changes).
     """
-
+    
     def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
         """Helper to add a file to the cycle"""
         nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
-
+        
         # Load events
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 events = json.load(f)
         except Exception:
             return
-
+        
         if not events:
             return
-
+        
         # Capture base_time BEFORE filtering so that files where the first
         # event is a filtered key (e.g. END key at t=90ms) keep their full
         # original duration. Without this, base_time jumps to the first
@@ -5103,21 +5221,29 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         if not events:
             return
 
-        # CRITICAL FIX v3.18.74: Convert quick DragStart->DragEnd clicks to LeftDown+LeftUp
-        # BEFORE any time-modifying features are applied. This prevents timestamp shifts
-        # from breaking the DragStart/DragEnd pairing detection in apply_cycle_features().
-        events = fix_click_events(events)
-
         # INTRA-FILE ZERO-GAP FIX (Feature 25)
-        # Some recordings capture a MouseMove and DragStart/LeftDown at the same
-        # millisecond (or within 1-14ms) at the same coordinates. The macro player
-        # reads these as simultaneous - it can't distinguish "arrived THEN clicked"
-        # from "both at once" - causing a left-button clamp at that position.
-        # Fix: scan for any MouseMove -> click-type pair with a gap < 15ms and
-        # shift the click event (and all subsequent events) forward by enough to
-        # create a clean 20ms separation. This is applied to the raw event list
-        # before any features are added so it doesn't interact with jitter/pauses.
+        # Two separate checks, both shift the DragStart (and all events after it)
+        # forward to enforce a minimum gap:
+        #
+        # Part A — MouseMove -> click-type gap < 15ms ("simultaneous arrival + click")
+        #   Some recordings capture a MouseMove and DragStart/LeftDown at the same
+        #   millisecond (or within 1-14ms). The macro player reads these as
+        #   simultaneous - it can't distinguish "arrived THEN clicked" from "both at
+        #   once" - causing a left-button clamp at that position.
+        #   Threshold: 15ms  |  Target separation: 20ms
+        #
+        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        #   Some recordings have a DragEnd followed almost immediately by another
+        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
+        #   The macro player doesn't have enough time to register a genuine button
+        #   release and re-press — it reads the pair as a single continuous hold,
+        #   causing the left-button to clamp. 150ms was chosen because it covers
+        #   all observed problem pairs (52-130ms) with headroom; human re-click
+        #   reactions are typically 200ms+, so 200ms target is imperceptible.
+        #   Threshold: 150ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
+
+        # Part A: MouseMove -> click-type zero-gap
         _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
         _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
         for _zi in range(1, len(events)):
@@ -5129,13 +5255,25 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
+        # Part B: DragEnd -> DragStart too-fast re-press
+        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
+        for _zi in range(1, len(events)):
+            if (events[_zi].get('Type') == 'DragStart'
+                    and events[_zi - 1].get('Type') == 'DragEnd'):
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
+                    _shift = _DRAG_REPRESS_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
         # Check if dmwm file
         if is_dmwm:
             has_dmwm = True
-
+        
         # Normalize timing — use pre-filter base so leading gaps are preserved
         base_time = base_time_pre_filter
-
+        
         # PRE-FILE PAUSE: 0.8 seconds BEFORE file plays (FLAT, NO multiplier)
         # This prevents drag issues when previous file ended with a click!
         if cycle_events:
@@ -5145,7 +5283,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
 
             # Track this pause
             total_pre_pause += pre_file_pause
-
+            
             # NOW do cursor transition (AFTER pause, so click has time to release)
             # Get last position from previous file
             last_x, last_y = None, None
@@ -5153,15 +5291,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 if e.get('X') is not None and e.get('Y') is not None:
                     last_x, last_y = int(e['X']), int(e['Y'])
                     break
-
+            
             # Get first position of current file
             first_x, first_y = None, None
             for e in events:
                 if e.get('X') is not None and e.get('Y') is not None:
                     first_x, first_y = int(e['X']), int(e['Y'])
                     break
-
-
+            
+            
             # CURSOR TRANSITION: skipped for click-sensitive folders
             # (no coordinate changes between files - cursor stays wherever it was)
             if not is_click_sensitive:
@@ -5191,32 +5329,32 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     post_snap_gap = int(rng.uniform(80, 150))
                     timeline += post_snap_gap
                     total_snap_gap_time += post_snap_gap
-
+        
         # Add events from current file
         for event in events:
             new_event = {**event}
             new_event['Time'] = event['Time'] - base_time + timeline
             cycle_events.append(new_event)
-
+        
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
             file_info_list.append((folder_num, file_label, is_dmwm, timeline))
         files_added += 1
-
+    
     # Main cycle building
     cycle_events = []
     file_info_list = []
     timeline = 0
     has_dmwm = False
-
+    
     files_added = 0  # Counts files added; guards pre-play buffer for every non-first file
     # NEW: Track pre-file pauses, post-pause delays, cursor transitions, and distraction durations
     total_pre_pause = 0
     total_transition_time = 0
     total_snap_gap_time = 0      # cumulative post-snap gaps (80-150ms per file transition)
     total_distraction_pause = 0  # cumulative duration of all inserted distraction files
-
+    
     # SINGLE-SUBFOLDER MODE: if only one subfolder exists, always_first/last
     # should bracket the ENTIRE strung file (once at the very start, once at
     # the very end) rather than wrapping every single selected file.
@@ -5232,7 +5370,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
             is_dmwm = single_always_first in dmwm_file_set
             add_file_to_cycle(single_always_first, only_folder_num, is_dmwm,
                               f"[ALWAYS FIRST] {single_always_first.name}")
-
+    
     def _maybe_insert_distraction(cur_folder_num):
         """Roll the chance and insert one distraction file at the current timeline.
         Uses VirtualDistQueue so all 50 files play before any repeats."""
@@ -5938,15 +6076,15 @@ def scan_for_numbered_subfolders(base_path):
     """
     Scans folder for subfolders with numbers in their names.
     Also checks for "dont mess with me" subfolder and "optional" folders.
-
+    
     NEW: Checks main folder name for "time sensitive" tag.
     If main folder is tagged, ALL subfolders become time_sensitive!
-
+    
     Accepts: "1", "part1", "step2", "3-action", "3 optional- walk", "3.5- insert", etc.
     DECIMAL SUPPORT: "3.5" will be placed after "3" and before "4"
-
+    
     Returns tuple: (numbered_folders_dict, dmwm_file_set, non_json_files_list)
-
+    
     numbered_folders: {num: {'files': [...], 'is_optional': bool}}
     dmwm_file_set: set of files from "dont mess with me"
     non_json_files: [list of non-JSON files to copy]
@@ -5955,7 +6093,7 @@ def scan_for_numbered_subfolders(base_path):
     numbered_folders = {}
     unmodified_files = []
     non_json_files = []
-
+    
     # Check if MAIN FOLDER is tagged - propagates to ALL subfolders
     _base_lower = base.name.lower()
     main_folder_time_sensitive  = 'time sensitive'  in _base_lower
@@ -5970,14 +6108,14 @@ def scan_for_numbered_subfolders(base_path):
         print(f"  ??  MAIN FOLDER is TIME SENSITIVE - All subfolders will skip inefficient files!")
     if main_folder_click_sensitive:
         print(f"  ?  MAIN FOLDER is CLICK SENSITIVE - All subfolders will skip cursor/jitter/idle/distraction features!")
-
+    
     for item in base.iterdir():
         if not item.is_dir():
             # Collect non-JSON files in root
             if not item.name.endswith('.json'):
                 non_json_files.append(item)
             continue
-
+        
         # Check for "Don't use features on me" folder (case-insensitive)
         # Also accepts old name "dont mess with me" for backward compatibility
         folder_name_lower = item.name.lower()
@@ -5987,7 +6125,7 @@ def scan_for_numbered_subfolders(base_path):
             unmodified_files.extend(dmwm_files)
             print(f"  [!]?  Found 'Don't use features on me' folder: {len(dmwm_files)} unmodified files")
             continue
-
+        
         # Extract folder number - prefer explicit F<N> prefix (F1, F2, F3.5, etc.)
         # so that other numbers in the name (e.g. 'press 1', 'optional-2-') are ignored.
         _f_match = re.match(r'^[Ff](\d+(?:\.\d+)?)', item.name.strip())
@@ -5999,7 +6137,7 @@ def scan_for_numbered_subfolders(base_path):
             folder_num = float(_n_match.group()) if _n_match else None
         if folder_num is not None:
             all_json_files = sorted(item.glob("*.json"))
-
+            
             # Separate "always first", "always last", and regular files
             # Collect ALL always_first/last variants into pools — one is chosen randomly per run
             always_first_pool = []
@@ -6018,14 +6156,14 @@ def scan_for_numbered_subfolders(base_path):
                     regular_files.append(json_file)
             always_first = always_first_pool  # store list; caller picks one randomly
             always_last  = always_last_pool
-
+            
             # Check if folder is "optional" (default 24-33%, or custom % from tag)
             is_optional = 'optional' in item.name.lower()
             optional_chance = parse_optional_chance(item.name) if is_optional else None
-
+            
             # Check if folder is "end" (becomes definitive end point)
             is_end = bool(re.search(r'\bend\b', item.name, re.IGNORECASE))
-
+            
             # Check if folder is "time sensitive" (1:1 raw:normal, no inef, minimal overhead)
             # Priority: Main folder tag > Individual subfolder tag
             if main_folder_time_sensitive:
@@ -6093,7 +6231,7 @@ def scan_for_numbered_subfolders(base_path):
             for file in item.iterdir():
                 if file.is_file() and not file.name.endswith('.' + 'json'):
                     non_json_files.append(file)
-
+    
     # FLAT FOLDER SUPPORT:
     # If no numbered subfolders were found, check if there are JSON files
     # sitting directly in the folder itself. If so, treat the folder as a
@@ -6101,11 +6239,11 @@ def scan_for_numbered_subfolders(base_path):
     # without any changes.
     if not numbered_folders:
         direct_json = sorted(base.glob('*.json'))
-
+        
         # Exclude logout files from the pool
         logout_names = {'logout.json', '- logout.json', '-logout.json'}
         direct_json = [f for f in direct_json if f.name.lower() not in logout_names]
-
+        
         if direct_json:
             # Separate always_first / always_last from regular files
             always_first_pool = []
@@ -6123,7 +6261,7 @@ def scan_for_numbered_subfolders(base_path):
                     regular_files.append(json_file)
             always_first = always_first_pool
             always_last  = always_last_pool
-
+            
             if regular_files:
                 print(f"   Flat folder detected - {len(regular_files)} file(s) treated as single pool (subfolder 1.0)")
                 numbered_folders[1.0] = {
@@ -6167,17 +6305,17 @@ def scan_for_numbered_subfolders(base_path):
 class ManualHistoryTracker:
     """
     Manual combination history - YOU upload combination files!
-
+    
     Folder: input_macros/combination_history/
-
+    
     Code reads ALL .txt files in that folder and ensures no duplicate combinations.
     You manually dump combination files from each bundle's output to this folder.
-
+    
     Files can be named anything, code reads them all:
     - COMBINATION_HISTORY_39.txt
     - combos_from_bundle_40.txt
     - anything.txt
-
+    
     All will be read and combined into one set of used combinations.
     """
     def __init__(self, subfolder_files, rng, folder_name, input_dir):
@@ -6185,10 +6323,10 @@ class ManualHistoryTracker:
         self.rng = rng
         self.folder_name = folder_name
         self.input_dir = input_dir
-
+        
         # History folder (not a single file!)
         self.history_dir = input_dir / "combination_history"
-
+        
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
 
@@ -6209,54 +6347,54 @@ class ManualHistoryTracker:
                 self._nested_trackers[fn] = ManualHistoryTracker(
                     nsf, self.rng, f"{self.folder_name}_nested_{fn}", self.input_dir
                 )
-
+        
         print(f"   {len(self.used_combinations)} combinations loaded from history")
         print(f"   History folder: {self.history_dir}")
-
+    
     def _load_all_combinations(self):
         """Read ALL .txt files in history folder and build set of used combos"""
         all_used = set()
-
+        
         if not self.history_dir.exists():
             print(f"   No history folder found (will skip tracking)")
             return all_used
-
+        
         # Read ALL .txt files
         txt_files = list(self.history_dir.glob("*.txt"))
         if not txt_files:
             print(f"   History folder empty (no .txt files)")
             return all_used
-
+        
         print(f"   Reading {len(txt_files)} history file(s)...")
-
+        
         for txt_file in txt_files:
             try:
                 with open(txt_file, 'r') as f:
                     for line in f:
                         line = line.strip()
-
+                        
                         # Skip empty lines and headers
                         if not line or line.startswith('[') or line.startswith('='):
                             continue
-
+                        
                         # Check if line is a combination (has F1=, F2=, etc.)
                         if 'F' in line and '=' in line and '|' in line:
                             # Extract just the folder name part if it's in [Folder: ...] format
                             if line.startswith('[') and ']' in line:
                                 continue  # Skip section headers
-
+                            
                             # This is a combination line
                             # Check if it matches current folder
                             # Format could be: F1=F1 (22).json|F2=F2 (39).json|F3=F3 (1).json
                             all_used.add(line)
-
+                
                 print(f"    [OK] {txt_file.name}: Loaded")
-
+                
             except Exception as e:
                 print(f"    [!]?  {txt_file.name}: Error - {e}")
-
+        
         return all_used
-
+    
     def _next_file(self, folder_num):
         """Return the next file from this subfolder's virtual queue.
         Refills and reshuffles when exhausted - no file repeats until all used.
@@ -6284,13 +6422,13 @@ class ManualHistoryTracker:
     def get_next_combination(self):
         """Get next unused combination (with end folder support)"""
         max_attempts = 500
-
+        
         for _ in range(max_attempts):
             # Pick random combination
             combination = []
             for folder_num in sorted(self.subfolder_files.keys()):
                 folder_data = self.subfolder_files[folder_num]
-
+                
                 # Check for "optional+end" combo (optional folder that ends loop if chosen)
                 if folder_data.get('is_optional_end', False):
                     optional_chance = folder_data.get('optional_chance', 0.50)
@@ -6302,20 +6440,20 @@ class ManualHistoryTracker:
                     else:
                         # Optional/end folder was skipped - continue to next folders
                         continue
-
+                
                 # Check for regular "end" folder (always included, always ends loop)
                 if folder_data.get('is_end', False) and not folder_data.get('is_optional', False):
                     # End folder - include it and STOP
                     _f = self._next_file(folder_num)
                     if _f: combination.append((folder_num, [_f]))
                     break  # End the loop here
-
+                
                 # Regular optional folder check (uses random 27-43% chance stored per folder)
                 if folder_data.get('is_optional', False):
                     optional_chance = folder_data.get('optional_chance', 0.50)
                     if self.rng.random() >= optional_chance:
                         continue
-
+                
                 # Nested folder: build sub-combinations instead of picking files
                 _nsf = folder_data.get('nested_subfolder_files')
                 _max = folder_data.get('max_files', 1)
@@ -6344,28 +6482,28 @@ class ManualHistoryTracker:
                             _picked.append(_f)
                     if _picked:
                         combination.append((folder_num, _picked))
-
+            
             if not combination:
                 continue
-
+            
             # Create signature (format folder numbers cleanly)
             signature = "|".join(
                 f"F{int(fn) if fn == int(fn) else fn}=" +
                 "+".join(fp.name if hasattr(fp, "name") else f"nested_{i}" for i, fp in enumerate(fl if isinstance(fl, list) else [fl]))
                 for fn, fl in combination
             )
-
+            
             # Check if unused
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)  # Mark as used
                 return combination
-
+        
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
-
+            
             # Handle optional+end
             if folder_data.get('is_optional_end', False):
                 optional_chance = folder_data.get('optional_chance', 0.50)
@@ -6375,23 +6513,23 @@ class ManualHistoryTracker:
                     break
                 else:
                     continue
-
+            
             # Handle regular end
             if folder_data.get('is_end', False) and not folder_data.get('is_optional', False):
                 files = folder_data['files']
                 _f = self._next_file(folder_num)
                 if _f: combination.append((folder_num, [_f]))
                 break
-
+            
             # Handle regular optional
             if folder_data.get('is_optional', False):
                 optional_chance = folder_data.get('optional_chance', 0.50)
                 if self.rng.random() >= optional_chance:
                     continue
-
+            
             _f = self._next_file(folder_num)
             if _f: combination.append((folder_num, [_f]))
-
+        
         return combination if combination else None
 
 
@@ -6430,6 +6568,143 @@ class VirtualDistQueue:
         return item
 
 
+
+
+# ============================================================================
+# LOGOUT SEQUENCE BUILDER (Feature 40)
+# ============================================================================
+
+def build_logout_sequence(folder_path, rng, out_path):
+    """
+    Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
+
+    Expected files inside the folder (matched by keyword in filename,
+    case-insensitive):
+      - filename contains 'proper'  -> slot 1: actual logout actions (played first)
+      - filename contains 'nothing' -> slot 2: idle file, receives random wait
+      - filename contains 'relogin' -> slot 3: re-login actions (played last)
+
+    Stringing order:
+      slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
+           -> pre-play buffer (500-800 ms) -> slot3
+
+    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
+                 Float, never rounded — full millisecond precision.
+
+    No anti-detection features applied. filter_problematic_keys() runs on load.
+    Writes to out_path; caller should name it '- logout.json' so the existing
+    copy-naming logic in main() produces '@ N LOGOUT.JSON' unchanged.
+
+    Returns out_path on success, None on failure.
+    """
+    json_files = sorted(folder_path.glob('*.json'))
+    if not json_files:
+        print(f"  [!] LOGOUT folder has no .json files — logout skipped")
+        return None
+
+    # Identify the three slots by keyword in filename
+    slot1 = slot2 = slot3 = None
+    for f in json_files:
+        n = f.name.lower()
+        if 'proper' in n:
+            slot1 = f
+        elif 'nothing' in n:
+            slot2 = f
+        elif 'relogin' in n:
+            slot3 = f
+
+    missing = []
+    if slot1 is None:
+        missing.append("slot-1 logout (filename must contain 'proper')")
+    if slot2 is None:
+        missing.append("slot-2 wait (filename must contain 'nothing')")
+    if slot3 is None:
+        missing.append("slot-3 login (filename must contain 'relogin')")
+    if missing:
+        print(f"  [!] LOGOUT folder: cannot identify: {'; '.join(missing)}")
+        print(f"      Found files: {[f.name for f in json_files]}")
+        print(f"      Logout skipped.")
+        return None
+
+    # Load and normalise each file (time base = 0)
+    def _load(path):
+        try:
+            events = json.load(open(path, encoding='utf-8'))
+        except Exception as exc:
+            print(f"  [!] LOGOUT: failed to load {path.name}: {exc}")
+            return None
+        if not events:
+            return None
+        events = filter_problematic_keys(events)
+        if not events:
+            return None
+        base = min(e.get('Time', 0) for e in events)
+        return [{**e, 'Time': e['Time'] - base} for e in events]
+
+    e1 = _load(slot1)
+    e2 = _load(slot2)
+    e3 = _load(slot3)
+
+    if not e1 or not e2 or not e3:
+        print(f"  [!] LOGOUT: one or more files empty after load — logout skipped")
+        return None
+
+    # String: slot1 -> buffer -> slot2 -> random_wait -> buffer -> slot3
+    merged   = []
+    timeline = 0.0
+
+    # Slot 1
+    dur1 = max(e.get('Time', 0) for e in e1)
+    for e in e1:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur1
+
+    # Pre-play buffer 1->2
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 2
+    dur2 = max(e.get('Time', 0) for e in e2)
+    for e in e2:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur2
+
+    # Random wait: 1 minute to 3 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    timeline += random_wait_ms
+
+    # Pre-play buffer 2->3
+    timeline += rng.uniform(500.0, 800.0)
+
+    # Slot 3
+    dur3 = max(e.get('Time', 0) for e in e3)
+    for e in e3:
+        merged.append({**e, 'Time': e['Time'] + timeline})
+    timeline += dur3
+
+    # Finalise: round times to int, sort
+    for e in merged:
+        e['Time'] = max(0, int(round(e['Time'])))
+    merged.sort(key=lambda e: e.get('Time', 0))
+
+    # Write to disk
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(merged, separators=(',', ':')))
+    except Exception as exc:
+        print(f"  [!] LOGOUT: failed to write strung file: {exc}")
+        return None
+
+    total_min  = int(timeline / 60000)
+    total_sec  = int((timeline % 60000) / 1000)
+    wait_min   = int(random_wait_ms / 60000)
+    wait_sec   = int((random_wait_ms % 60000) / 1000)
+    print(f"  Built LOGOUT sequence:")
+    print(f"    1. {slot1.name}")
+    print(f"    2. {slot2.name}  (+{wait_min}m {wait_sec}s random wait)")
+    print(f"    3. {slot3.name}")
+    print(f"    Total duration: {total_min}m {total_sec}s  |  written -> {out_path.name}")
+    return out_path
+
 def main():
     parser = argparse.ArgumentParser(description="String Macros v3.1.0")
     parser.add_argument("input_root", type=str)
@@ -6440,7 +6715,7 @@ def main():
     parser.add_argument("--no-chat", action="store_true", help="Disable chat inserts")
     parser.add_argument("--specific-folders", type=str, help="Path to file with specific folder names to include (one per line)")
     args = parser.parse_args()
-
+    
     print("="*70)
     print(f"STRING MACROS v{VERSION}")
     print("="*70)
@@ -6449,17 +6724,17 @@ def main():
     print(f"Versions: {args.versions} total (3 Raw + 3 Inef + 6 Normal)")
     print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (50% chance)'}")
     print("="*70)
-
+    
     # Setup
     search_base = Path(args.input_root).resolve()
     if not search_base.exists():
         print(f"[X] Input root not found: {search_base}")
         return
-
+    
     output_root = Path(args.output_root).resolve()
     bundle_dir = output_root / f"stringed_bundle_{args.bundle_id}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
-
+    
     # Load chat files
     chat_files = []
     if not args.no_chat:
@@ -6468,7 +6743,7 @@ def main():
             chat_files = list(chat_dir.glob("*.json"))
             if chat_files:
                 print(f"? Found {len(chat_files)} chat insert files")
-
+    
     # Scan for DISTRACTIONS trigger - accepts either:
     #   A) A folder named "DISTRACTIONS" (case-insensitive) containing >=1 .json
     #   B) A single file named "distraction_file.json" (or similar) at root level
@@ -6513,20 +6788,42 @@ def main():
             distractions_src = None
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
-
-    # Look for logout file
+    
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
+    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
+    # build_logout_sequence() strings its 3 files and writes the result to
+    # output_root/- logout.json, which the copy block below picks up unchanged.
+    # Falls back to the old static '- logout.json' search if the folder is absent.
     logout_file = None
-    logout_patterns = ["logout.json", "- logout.json", "-logout.json", "logout", "- logout", "-logout"]
-    for location_dir in [search_base, search_base.parent]:
-        if logout_file:
+    _logout_folder = None
+    for _d in search_base.iterdir():
+        if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
+            _logout_folder = _d
             break
-        for pattern in logout_patterns:
-            test_file = location_dir / pattern
-            for test_path in [test_file, Path(str(test_file) + ".json")]:
-                if test_path.exists() and test_path.is_file():
-                    logout_file = test_path
-                    print(f"? Found logout file: {logout_file.name}")
-                    break
+
+    if _logout_folder:
+        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
+        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
+        _lo_dest = Path(args.output_root) / "- logout.json"
+        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
+        if _built:
+            logout_file = _built
+        else:
+            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+    else:
+        # Fallback: look for a static logout .json at root level
+        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
+                           "logout", "- logout", "-logout"]
+        for location_dir in [search_base, search_base.parent]:
+            if logout_file:
+                break
+            for pattern in logout_patterns:
+                test_file = location_dir / pattern
+                for test_path in [test_file, Path(str(test_file) + ".json")]:
+                    if test_path.exists() and test_path.is_file():
+                        logout_file = test_path
+                        print(f"? Found logout file: {logout_file.name}")
+                        break
 
     print()
 
@@ -6541,8 +6838,13 @@ def main():
         if folder.name.lower() == 'distractions':
             continue
 
+        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
+        # before the scan loop; should not be treated as a macro folder.
+        if folder.name.lower() == 'logout, wait, in':
+            continue
+        
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
-
+        
         # Add dmwm files to the appropriate numbered folder
         for dmwm_file in dmwm_file_set:
             # Try to determine which numbered folder it should belong to
@@ -6550,7 +6852,7 @@ def main():
             if 0 not in numbered_subfolders:
                 numbered_subfolders[0] = []
             numbered_subfolders[0].append(dmwm_file)
-
+        
         if numbered_subfolders:
             main_folders.append({
                 'path': folder,
@@ -6565,7 +6867,7 @@ def main():
             if numbered_subfolders:
                 nums = sorted([k for k in numbered_subfolders.keys() if k != 0])
                 print(f"  Subfolders: {nums}")
-
+                
                 # Show special folder types
                 special_folders = []
                 for num in nums:
@@ -6577,22 +6879,22 @@ def main():
                             special_folders.append(f"{num} (end)")
                         elif folder_info.get('is_optional'):
                             special_folders.append(f"{num} (optional)")
-
+                        
                         # Also mark time_sensitive folders
                         if folder_info.get('is_time_sensitive'):
                             special_folders.append(f"{num} (time sensitive)")
-
+                
                 if special_folders:
                     print(f"  Special: {', '.join(special_folders)}")
             if dmwm_file_set:
                 print(f"  Unmodified: {len(dmwm_file_set)} files (added to pool)")
             if non_json_files:
                 print(f"  Non-JSON: {len(non_json_files)} files")
-
+    
     if not main_folders:
         print("[X] No folders with numbered subfolders found!")
         return
-
+    
     # Filter by specific folders (and optionally specific subfolders) if provided
     # File format (one entry per line):
     #   FolderName                     -> include that folder, ALL its subfolders
@@ -6734,17 +7036,17 @@ def main():
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
                 print(f"\n[!]?  Specific folders file is empty, processing ALL folders")
-
+        
         except FileNotFoundError:
             print(f"\n[X] Specific folders file not found: {args.specific_folders}")
             return
         except Exception as e:
             print(f"\n[X] Error reading specific folders file: {e}")
             return
-
+    
     print(f"\n Total folders to process: {len(main_folders)}")
     print("="*70)
-
+    
     # Initialize global chat queue
     rng = random.Random(args.bundle_id * 42)
     global_chat_queue = list(chat_files) if chat_files else []
@@ -6752,7 +7054,7 @@ def main():
         rng.shuffle(global_chat_queue)
         print(f" Initialized global chat queue with {len(global_chat_queue)} files")
         print()
-
+    
     # Track ALL combinations for the bundle (one file at root level)
     bundle_combinations = {}  # {folder_name: [combination_signatures]}
 
@@ -6789,15 +7091,15 @@ def main():
         # - Raw files:         0%          (never)
         folder_dist_chance_normal = rng.uniform(3.5,  5.0) / 100.0 if distraction_files else 0.0
         folder_dist_chance_inef   = rng.uniform(3.5,  7.0) / 100.0 if distraction_files else 0.0
-
+        
         # D_ REMOVAL
         cleaned_folder_name = re.sub(r'[Dd]_', '', folder_name)
-
+        
         # Extract folder number
         folder_num_match = re.search(r'\d+', cleaned_folder_name)
         folder_number = int(folder_num_match.group()) if folder_num_match else 0
-
-
+        
+        
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
         if args.specific_folders:
@@ -6805,7 +7107,7 @@ def main():
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
-
+        
         # Copy logout file with @ prefix
         if logout_file:
             try:
@@ -6818,7 +7120,7 @@ def main():
                 print(f"  ? Copied logout: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying logout: {e}")
-
+        
         # Copy non-JSON files with @ prefix
         for non_json_file in non_json_files:
             try:
@@ -6831,21 +7133,21 @@ def main():
                 print(f"  ? Copied non-JSON: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying {non_json_file.name}: {e}")
-
+        
         if not subfolder_files:
             print("  [!]?  No numbered subfolders to process")
             continue
-
+        
         # Use bundle-organized tracker
         tracker = ManualHistoryTracker(
             subfolder_files, rng, cleaned_folder_name, search_base
         )
         target_ms = args.target_minutes * 60000
-
+        
         _base_target_ms = target_ms  # base for per-version +-5min variance
         # Track all combinations used in THIS RUN for this folder
         folder_combinations_used = []
-
+        
         # Calculate total original duration
         # Detect "copied" subfolders: subfolders whose file-name sets are identical
         # (e.g. F1-mine and F2-mine with same files). Count their files only once
@@ -6873,7 +7175,7 @@ def main():
                     total_original_files += 1
                     total_original_ms += get_file_duration_ms(f)
 
-
+        
         # Build subfolder file count lines for manifest
         _subfolder_lines = []
         for _fn in sorted(subfolder_files.keys()):
@@ -6916,22 +7218,22 @@ def main():
              if num_copied_folders > 0
              else f"Total Original Files Duration: {format_ms_precise(total_original_ms)}"),
         ] + _subfolder_lines + [""]
-
+        
         # Check if any folders are 'time sensitive' (no inefficient files)
         has_time_sensitive = any(
-            folder_data.get('is_time_sensitive', False)
+            folder_data.get('is_time_sensitive', False) 
             for folder_data in subfolder_files.values()
         )
-
+        
         # Debug: Show which folders are time_sensitive
         if has_time_sensitive:
             time_sensitive_folders = [
                 str(int(num) if num == int(num) else num)
-                for num, data in subfolder_files.items()
+                for num, data in subfolder_files.items() 
                 if data.get('is_time_sensitive', False)
             ]
             print(f"  ??  TIME SENSITIVE folders detected: {', '.join(time_sensitive_folders)}")
-
+        
         # Version loop: 3 Raw + 3 Inef + 6 Normal = 12 total
         # OR: 3 Raw + 0 Inef + 9 Normal = 12 total (if time_sensitive)
         def get_version_letter(idx):
@@ -6962,7 +7264,7 @@ def main():
                 num_normal = 1
                 num_inef = max(1, args.versions - num_raw - num_normal)
             print(f"   File distribution: {num_raw} Raw + {num_inef} Inef + {num_normal} Normal ({num_raw}:{num_inef}:{num_normal} ratio, target 2:3:7)")
-
+        
         # CHAT INSERT: pick exactly 1 non-raw version per folder batch to receive
         # a single chat file inserted at a random midpoint in the finished strung file.
         # Raw files never get chat (they carry no added features).
@@ -6975,23 +7277,23 @@ def main():
                 chat_file_for_version = rng.choice(chat_files)
                 cv_letter = get_version_letter(chat_version_idx)
                 print(f"   Chat insert: version {cv_letter} will receive 1 chat ({chat_file_for_version.name})")
-
+        
         for v_idx in range(args.versions):
             v_letter = get_version_letter(v_idx)
-
+            
             # Determine file type
             is_raw = (v_idx < num_raw)
             is_inef = (num_raw <= v_idx < num_raw + num_inef)
             is_normal = (v_idx >= num_raw + num_inef)
-
+            
             # DEBUG: Show file type determination
             if v_idx == 0:  # First file
                 print(f"\n   File Type Assignments:")
-
+            
             file_type_str = "RAW" if is_raw else ("INEFFICIENT" if is_inef else "NORMAL")
             prefix_str = "^" if is_raw else ("\u00ac\u00ac" if is_inef else "none")
             print(f"     {v_letter}: {file_type_str:12s} (prefix: {prefix_str})")
-
+            
             # Set multiplier — continuous random range (not rounded), giving decimal values
             # e.g. Normal picks anywhere in [1.3, 1.5] so 1.31, 1.44, 1.49, etc.
             if is_raw:
@@ -7003,7 +7305,7 @@ def main():
             else:  # normal
                 # Normal: range 1.3 – 1.5  (e.g. 1.33, 1.47)
                 mult = round(rng.uniform(1.5, 1.7), 4)
-
+            
             # Per-version target: ±5 minutes random variance around base target
             # Each version independently drawn — decimal ms, never rounded
             _variance_ms = rng.uniform(-5 * 60000, 5 * 60000)
@@ -7070,7 +7372,7 @@ def main():
                 combo = tracker.get_next_combination()
                 if not combo:
                     break
-
+                
                 # Track this combination signature (format folder numbers cleanly)
                 combo_signature = "|".join(
                     f"F{int(fn) if fn == int(fn) else fn}=" +
@@ -7078,10 +7380,22 @@ def main():
                     for fn, fl in combo
                 )
                 folder_combinations_used.append(combo_signature)
-
+                
                 # BUILD CYCLE (F1 -> F2 -> F3) WITHOUT features
-                # Folder is click-sensitive if ANY subfolder in this folder is tagged
-                folder_is_click_sensitive = any(
+                # Folder is click-sensitive if ANY subfolder in this folder is tagged,
+                # OR if the main folder name contains a click-sensitive tag.
+                # Belt-and-suspenders: check the name directly so that if the
+                # is_click_sensitive flag ever fails to propagate through the subfolder
+                # dicts (e.g. after specific-folders filtering), the feature is still
+                # correctly suppressed for all cycles in this folder.
+                _fn_lower = folder_name.lower()
+                _name_click_sensitive = (
+                    'click sensitive'      in _fn_lower or
+                    'click/time sensitive' in _fn_lower or
+                    'click+time sensitive' in _fn_lower or
+                    'click time sensitive' in _fn_lower
+                )
+                folder_is_click_sensitive = _name_click_sensitive or any(
                     fd.get('is_click_sensitive', False)
                     for fd in subfolder_files.values()
                 )
@@ -7112,24 +7426,24 @@ def main():
                     mult=mult
                 )
                 _cycle_count += 1
-
+                
                 cycle_events = cycle_result['events']
                 file_info = cycle_result['file_info']
                 has_dmwm = cycle_result['has_dmwm']
-
+                
                 if not cycle_events:
                     break
-
+                
                 # APPLY FEATURES to ENTIRE cycle
                 cycle_with_features, stats = apply_cycle_features(
                     cycle_events, rng, is_raw, has_dmwm, is_inef=is_inef,
                     is_click_sensitive=folder_is_click_sensitive, mult=mult
                 )
-
+                
                 # Check if adding would exceed target
                 current_duration = stringed_events[-1]['Time'] if stringed_events else 0
                 cycle_duration = cycle_with_features[-1]['Time'] if cycle_with_features else 0
-
+                
                 # Add INEFFICIENT Before File Pause (only for inefficient files, only if file >= 25 sec)
                 inter_cycle_pause = 0
                 if stringed_events:
@@ -7142,6 +7456,39 @@ def main():
                     _cycle_gap = rng.uniform(500.0, 800.0)
                     inter_cycle_pause += int(_cycle_gap)
                     total_pre_file += _cycle_gap
+
+                    # Add cursor transition for raw/normal file types during the inter-cycle gap.
+                    # Inef skips this block — its transition is handled below in the inef block,
+                    # which covers the full 10-30s pause with a slow drift. Running both blocks
+                    # would: (1) move cursor to destination immediately in block 1, then (2) find
+                    # distance≈0 in block 2, generating no drift at all during the long pause.
+                    if not folder_is_click_sensitive and not is_inef:
+                        _ic_last_x, _ic_last_y = None, None
+                        for _e in reversed(stringed_events):
+                            if _e.get('X') is not None and _e.get('Y') is not None:
+                                _ic_last_x, _ic_last_y = int(_e['X']), int(_e['Y'])
+                                break
+                        _ic_first_x, _ic_first_y = None, None
+                        for _e in cycle_with_features:
+                            if _e.get('X') is not None and _e.get('Y') is not None:
+                                _ic_first_x, _ic_first_y = int(_e['X']), int(_e['Y'])
+                                break
+                        if (_ic_last_x is not None and _ic_first_x is not None
+                                and (_ic_last_x != _ic_first_x or _ic_last_y != _ic_first_y)):
+                            _ic_base = stringed_events[-1]['Time']
+                            _ic_path = generate_human_path(
+                                _ic_last_x, _ic_last_y, _ic_first_x, _ic_first_y,
+                                int(_cycle_gap), rng
+                            )
+                            for _rt, _px, _py in _ic_path[:-1]:
+                                if _rt < int(_cycle_gap):
+                                    stringed_events.append({
+                                        'Type': 'MouseMove',
+                                        'Time': _ic_base + _rt,
+                                        'X': _px, 'Y': _py
+                                    })
+                            total_transitions += int(_cycle_gap)
+
                 if stringed_events and is_inef:
                     # Check file length: Only apply if file is >= 25 seconds (25000ms)
                     file_duration = cycle_duration  # Current cycle duration in ms
@@ -7151,7 +7498,15 @@ def main():
                         inter_cycle_pause = int(rng.uniform(10000.0, 30000.0))
                         total_inter += inter_cycle_pause
 
-                    # Add cursor transition during pause
+                    # Add slow cursor drift covering the full inef pause.
+                    # FIX (v3.18.75): _trans_base uses current_duration (real end of previous
+                    # cycle content), not stringed_events[-1]['Time']. The old code pointed to
+                    # the tail of any idle-movement events that extend beyond current_duration,
+                    # causing drift events to start late and overlap with the next cycle after
+                    # sort. Using current_duration anchors the drift correctly at the cycle
+                    # boundary. Block-1 is now skipped for inef (see above), so
+                    # stringed_events[-1] is still at current_duration when we arrive here —
+                    # but using current_duration explicitly is safer and self-documenting.
                     last_x, last_y = None, None
                     for e in reversed(stringed_events):
                         if e.get('X') is not None and e.get('Y') is not None:
@@ -7164,54 +7519,54 @@ def main():
                             first_x, first_y = int(e['X']), int(e['Y'])
                             break
 
-                    if last_x and first_x and (last_x != first_x or last_y != first_y):
+                    if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
+                        _trans_base = current_duration  # FIX: anchor at cycle boundary, not after idle events
                         transition_path = generate_human_path(
                             last_x, last_y, first_x, first_y,
                             inter_cycle_pause, rng
                         )
-
                         for rel_time, x, y in transition_path[:-1]:
                             if rel_time < inter_cycle_pause:
                                 stringed_events.append({
                                     'Type': 'MouseMove',
-                                    'Time': current_duration + rel_time,
+                                    'Time': _trans_base + rel_time,
                                     'X': x,
                                     'Y': y
                                 })
-
+                
                 potential_total = current_duration + inter_cycle_pause + cycle_duration
                 margin = int(_effective_target * 0.05)
                 if potential_total > _effective_target + margin and stringed_events:
                     break
-
+                
                 # Add cycle to merged events
                 offset = current_duration + inter_cycle_pause
                 for e in cycle_with_features:
                     new_event = {**e}
                     new_event['Time'] = e['Time'] + offset
                     stringed_events.append(new_event)
-
+                
                 # Track file info with cumulative timeline
                 # file_info now includes end time within cycle
                 for folder_num, filename, is_dmwm, end_time_in_cycle in file_info:
                     # Add offset to get actual end time in merged events
                     actual_end_time = end_time_in_cycle + offset
                     all_file_info_with_times.append((folder_num, filename, is_dmwm, actual_end_time))
-
+                
                 # Update stats
                 total_intra += stats['intra_pauses']
                 total_idle += stats['idle_movements']
                 jitter_pct = stats['jitter_percentage']
-
+                
                 # NEW: Accumulate pre-file pause, post-pause, and transition times
                 total_pre_file += cycle_result.get('pre_pause_total', 0)
                 total_transitions += cycle_result.get('transition_total', 0)
                 total_snap_gap += cycle_result.get('snap_gap_total', 0)
                 total_dist_pause += cycle_result.get('distraction_pause_total', 0)
-
+                
                 if len(all_file_info_with_times) > 2000:  # Safety limit (increased from 150)
                     break
-
+            
             # Flat/single-subfolder: inject always_last once at the very end
             if _is_flat_folder and stringed_events:
                 _only_fn  = next(iter(subfolder_files))
@@ -7263,16 +7618,16 @@ def main():
             if not stringed_events:
                 print(f"  [!]?  Version {v_letter}: no events built (all combos exceeded target or no valid combo) - skipping")
                 continue
-
+            
             # Add massive pause for INEFFICIENT
             if is_inef and len(stringed_events) > 1:
                 stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng)  # mult not applied
-
+                
                 # FIX: Update file end times that occur after the massive pause
                 if massive_pause_ms > 0 and split_idx > 0 and split_idx < len(stringed_events):
                     # Find the timestamp of the split point
                     split_time = stringed_events[split_idx]['Time']
-
+                    
                     # Update all file end times that occur after the split
                     updated_file_info = []
                     for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
@@ -7283,14 +7638,14 @@ def main():
                         else:
                             # File ends before the pause - keep original time
                             updated_file_info.append((folder_num, filename, is_dmwm, end_time))
-
+                    
                     all_file_info_with_times = updated_file_info
-
+            
             # Calculate total duration
             total_duration = stringed_events[-1]['Time']
             total_min = int(total_duration / 60000)
             total_sec = int((total_duration % 60000) / 1000)
-
+            
             # File prefix and name
             if is_raw:
                 prefix = "^"
@@ -7298,10 +7653,10 @@ def main():
                 prefix = "\u00ac\u00ac"
             else:
                 prefix = ""
-
+            
             v_code = f"{folder_number}_{v_letter}"
             fname = f"{prefix}{v_code}_{total_min}m{total_sec}s.json"
-
+            
             # CRITICAL FIXES before saving:
             # 1. Convert Click events to LeftDown+LeftUp pairs (prevents clamp)
             # 2. Sort all events by Time (prevents out-of-order gaps)
@@ -7311,7 +7666,7 @@ def main():
                 if 'Time' in e:
                     e['Time'] = max(0, int(round(e['Time'])))
             stringed_events = sorted(stringed_events, key=lambda e: e.get('Time', 0))
-
+            
             # CHAT INSERT: splice one chat file into the chosen version
             chat_inserted = False
             if v_idx == chat_version_idx and chat_file_for_version and not is_raw:
@@ -7322,7 +7677,7 @@ def main():
                         # Normalise chat event times to start at 0
                         chat_base = min(e.get('Time', 0) for e in chat_events)
                         chat_duration = max(e.get('Time', 0) for e in chat_events) - chat_base
-
+                        
                         # Pick a random insertion point in the middle third of the file
                         if len(stringed_events) >= 6:
                             lo = len(stringed_events) // 3
@@ -7330,20 +7685,20 @@ def main():
                             insert_idx = rng.randint(lo, hi)
                         else:
                             insert_idx = len(stringed_events) // 2
-
+                        
                         insert_time = stringed_events[insert_idx]['Time']
-
+                        
                         # Shift all events after insertion point forward by chat duration
                         for e in stringed_events[insert_idx:]:
                             e['Time'] += chat_duration
-
+                        
                         # Build chat events at insert_time
                         chat_splice = []
                         for e in chat_events:
                             ne = {**e}
                             ne['Time'] = insert_time + (e.get('Time', 0) - chat_base)
                             chat_splice.append(ne)
-
+                        
                         # Splice in and re-sort
                         stringed_events = (
                             stringed_events[:insert_idx] +
@@ -7355,19 +7710,19 @@ def main():
                         print(f"      Chat inserted: {chat_file_for_version.name} at ~{insert_time//60000}m{(insert_time%60000)//1000}s")
                 except Exception as chat_err:
                     print(f"     [!]?  Chat insert failed: {chat_err}")
-
+            
             # Save file
             (out_folder / fname).write_text(json.dumps(stringed_events, separators=(',', ':')))
-
+            
             # DEBUG: Show created file
             type_label = "RAW" if is_raw else ("INEF" if is_inef else "NORM")
             chat_tag = " +CHAT" if chat_inserted else ""
             print(f"     ? Created: {fname:<30s} [{type_label}{chat_tag}]")
-
+            
             # Build manifest entry
             separator = "=" * 40
             version_label = f"Version {prefix}{v_code}_{total_min}m{total_sec}s:"
-
+            
             # Compute totals for all three types
             if is_raw:
                 _intra_show = 0; _inter_show = 0; _massive_show = 0
@@ -7399,40 +7754,40 @@ def main():
                 f"                - INEFFICIENT MASSIVE PAUSE: {format_ms_precise(_massive_show)}",
                 ""
             ]
-
+            
             # Add file list with F#* prefix and cumulative timeline
             for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
                 prefix = "[UNMODIFIED] " if is_dmwm else ""
                 manifest_entry.append(f"  * {prefix}{filename} (Ends at {format_ms_precise(end_time)})")
-
+            
             manifest_lines.extend(manifest_entry)
-
+        
         # Write manifest
         manifest_path = out_folder / f"!_MANIFEST_{folder_number}_!.txt"
         manifest_path.write_text("\n".join(manifest_lines), encoding="utf-8")
         print(f"\n   Manifest written: {manifest_path.name}")
-
+        
         # Collect combinations for this folder (for bundle-level file)
         # Use the combinations we tracked during THIS RUN
         if folder_combinations_used:
             bundle_combinations[cleaned_folder_name] = folder_combinations_used
         files_written = len(folder_combinations_used)
         print(f"  [OK] Folder done: {output_folder_name} - {files_written} version(s) written")
-
+    
     # Write ONE combination file at SAME LEVEL as bundle folder
     if bundle_combinations:
         combo_file = output_root / f"COMBINATION_HISTORY_{args.bundle_id}.txt"
         try:
             with open(combo_file, 'w') as f:
                 f.write(f"=== BUNDLE {args.bundle_id} COMBINATION HISTORY ===\n\n")
-
+                
                 for folder_name in sorted(bundle_combinations.keys()):
                     combos = bundle_combinations[folder_name]
                     f.write(f"[{folder_name}]\n")
                     for combo in combos:
                         f.write(f"{combo}\n")
                     f.write(f"\n")
-
+            
             total_combos = sum(len(c) for c in bundle_combinations.values())
             print(f"\n Combination file written: {combo_file.name}")
             print(f"   Total combinations: {total_combos} across {len(bundle_combinations)} folders")
