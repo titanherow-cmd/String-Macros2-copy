@@ -136,6 +136,30 @@ jobs:
           echo "Running: python3 string_macros.py ${ARGS[@]}"
           echo ""
           python3 string_macros.py "${ARGS[@]}"
+                 - name: Execute string macros script
+         run: |
+           mkdir -p output
+           
+           ARGS=(
+             "input_macros"
+             "output"
+             "--versions" "${{ github.event.inputs.versions }}"
+             "--target-minutes" "${{ github.event.inputs.target_minutes }}"
+             "--bundle-id" "${{ env.BUNDLE_SEQ }}"
+           )
+           
+           if [ "${{ inputs.enable_chat }}" = "false" ]; then
+             ARGS+=("--no-chat")
+           fi
+           
+           if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
+             ARGS+=("--specific-folders" "${{ env.FOLDERS_FILE }}")
+           fi
+           
+           echo "Running: python3 string_macros.py ${ARGS[@]}"
+           echo ""
+           # THIS LINE: Capture all output and show traceback
+           python3 string_macros.py "${ARGS[@]}" 2>&1 || (echo "Script failed with exit code $?"; exit 1)
             
       - name: Commit and Push Updates
         run: |
