@@ -1,10 +1,10 @@
-name: String macros debug run
+name: String macros (v3.18.74 - 7z compression + subfolder filtering)
 
 on:
   workflow_dispatch:
     inputs:
       specific_folders_input:
-        description: 'Specific folders to include (comma-separated if multiple)'
+        description: 'Specific folders to include'
         required: false
         default: ''
         type: string
@@ -25,80 +25,194 @@ on:
       target_minutes:
         description: 'Target duration per stringed file *'
         required: true
-        default: '100'
+        default: '60'
+
+permissions:
+  contents: write
 
 jobs:
-  debug-string:
+  string:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Output INPUTS and ENV
+          
+      - name: Get current BUNDLE_SEQ
+        id: seq
         run: |
-          echo "::group::GITHUB_ENV"
-          env
-          echo "::endgroup::"
-          echo "::group::GITHUB INPUTS"
-          echo "${{ toJson(github.event.inputs) }}"
-          echo "::endgroup::"
-
-      - name: Show folder structure before running
+          if [ -f .github/string_bundle_counter.txt ]; then
+            VAL=$(cat .github/string_bundle_counter.txt)
+          else
+            VAL=1
+          fi
+          echo "BUNDLE_SEQ=$VAL" >> "$GITHUB_ENV"
+      
+      - name: Process specific folders input
+        id: process_folders
         run: |
-          echo "PWD: $PWD"
-          ls -l .
-          ls -l ./input_macros || true
-
-      - name: Build script arguments
-        id: args
+          SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
+          SAVED_FILE=".github/specific_folders_to_include.txt"
+          
+          if [ -n "$SPECIFIC_INPUT" ]; then
+            # User provided input - SAVE IT to permanent file
+            mkdir -p .github
+            echo "$SPECIFIC_INPUT" > "$SAVED_FILE"
+            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=UI input (saved to $SAVED_FILE)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
+            echo "✓ Saved UI input to $SAVED_FILE for future runs"
+          elif [ -f "$SAVED_FILE" ]; then
+            # Use existing saved file
+            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+          else
+            # No input and no file
+            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
+            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+          fi
+      
+      - name: Display settings
         run: |
-          ARGS=("input_macros" "output" "--versions" "${{ github.event.inputs.versions }}" "--target-minutes" "${{ github.event.inputs.target_minutes }}" "--bundle-id" "999")
-          if [ "${{ github.event.inputs.enable_chat }}" = "false" ]; then
+          echo "========================================"
+          echo "STRING MACROS v3.10.0"
+          echo "========================================"
+          echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
+          echo "Versions: ${{ github.event.inputs.versions }}"
+          echo "Target: ${{ github.event.inputs.target_minutes }} minutes"
+          if [ "${{ inputs.enable_chat }}" = "true" ]; then
+            echo "Chat: ENABLED (50% of files)"
+          else
+            echo "Chat: DISABLED"
+          fi
+          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
+            echo "Specific folders: ENABLED"
+            echo "Source: ${{ env.FOLDERS_SOURCE }}"
+            if [ -n "${{ env.FOLDERS_FILE }}" ]; then
+              echo "Folders:"
+              cat "${{ env.FOLDERS_FILE }}"
+            fi
+          else
+            echo "Specific folders: DISABLED (all folders)"
+          fi
+          echo "========================================"
+        
+      - name: Execute string macros script
+        run: |
+          mkdir -p output
+          
+          # Build arguments array
+          ARGS=(
+            "input_macros"
+            "output"
+            "--versions" "${{ github.event.inputs.versions }}"
+            "--target-minutes" "${{ github.event.inputs.target_minutes }}"
+            "--bundle-id" "${{ env.BUNDLE_SEQ }}"
+          )
+          
+          # Add --no-chat if disabled
+          if [ "${{ inputs.enable_chat }}" = "false" ]; then
             ARGS+=("--no-chat")
           fi
-          if [ "${{ github.event.inputs.use_specific_folders }}" = "true" ] && [ -f ".github/specific_folders_to_include.txt" ]; then
-            ARGS+=("--specific-folders" ".github/specific_folders_to_include.txt")
+          
+          # Add --specific-folders if enabled
+          if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
+            ARGS+=("--specific-folders" "${{ env.FOLDERS_FILE }}")
           fi
-          echo "${ARGS[@]}"
-          echo "ARGS=${ARGS[@]}" >> "$GITHUB_ENV"
-
-      - name: Scrub output dir before run
-        run: rm -rf output && mkdir output
-
-      - name: List output dir before Python script
-        run: ls -la output/
-
-      - name: Run string_macros.py with tracebacks
+          
+          # Execute
+          echo "Running: python3 string_macros.py ${ARGS[@]}"
+          echo ""
+          python3 string_macros.py "${ARGS[@]}"
+            
+      - name: Commit and Push Updates
         run: |
-          set -o pipefail
-          echo "Running: python3 string_macros.py $ARGS"
-          python3 string_macros.py $ARGS 2>&1 | tee __string_debug.log
-          echo "::group::Show output directory"
-          ls -la output || true
-          echo "::endgroup::"
-          echo "::group::Show debug log"
-          tail -n 100 __string_debug.log
-          echo "::endgroup::"
-        env:
-          ARGS: ${{ env.ARGS }}
+          NEW_VAL=$((BUNDLE_SEQ + 1))
+          mkdir -p .github
+          echo "$NEW_VAL" > .github/string_bundle_counter.txt
+          
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # Add counter
+          git add .github/string_bundle_counter.txt
+          
+          # Also add folders file if it was updated from UI input
+          if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
+            git add ".github/specific_folders_to_include.txt"
+            git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
+          else
+            git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
+          fi
+          
+          git push || echo "Push failed"
+            
+      - name: Add combination file to output
+        run: |
+          BUNDLE_DIR="output/stringed_bundle_${{ env.BUNDLE_SEQ }}"
+          COMBO_FILE="output/COMBINATION_HISTORY_${{ env.BUNDLE_SEQ }}.txt"
+          
+          if [ -f "$COMBO_FILE" ]; then
+            cp "$COMBO_FILE" "$BUNDLE_DIR/" 2>/dev/null || echo "Could not copy combination file"
+            echo "✓ Copied combination file to bundle"
+          else
+            echo "⚠️ No combination file found at $COMBO_FILE"
+          fi
+            
+      - name: Create ZIP artifact
+        run: |
+          BUNDLE_NAME="stringed_bundle_${{ env.BUNDLE_SEQ }}"
+          ZIP_FILE="stringed_macros_${{ env.BUNDLE_SEQ }}.7z"
+          
+          echo "Creating ZIP from: output/$BUNDLE_NAME"
+          ls -R output/
+          
+          if [ -d "output/$BUNDLE_NAME" ]; then
+            # Check if specific folders mode is enabled
+            if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
+              # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
+              echo "Specific folders mode: Creating flat 7z structure..."
 
-      - name: List output again after script run
-        run: ls -la output/ || true
+              # Check if directory has any content
+              if [ -z "$(ls -A "output/$BUNDLE_NAME")" ]; then
+                echo "✗ Error: Directory output/$BUNDLE_NAME is empty!"
+                exit 1
+              fi
 
-      - name: Archive debug log
+              # List contents before zipping
+              echo "Contents to zip:"
+              ls -la "output/$BUNDLE_NAME"
+
+              # 7z max compression, flat structure
+              cd "output/$BUNDLE_NAME"
+              7z a -mx=9 -mmt=2 "../../$ZIP_FILE" .
+              cd ../..
+              echo "✓ Created flat structure: $ZIP_FILE"
+            else
+              # NORMAL MODE: Zip the entire bundle directory
+              echo "Normal mode: Creating standard 7z structure..."
+              7z a -mx=9 -mmt=2 "$ZIP_FILE" "output/$BUNDLE_NAME"
+              echo "✓ Created: $ZIP_FILE"
+            fi
+          else
+            echo "✗ Error: Directory output/$BUNDLE_NAME was not found!"
+            exit 1
+          fi
+          echo "FINAL_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+          
+      - name: Upload stringed ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: debug-log
-          path: __string_debug.log
-
-      - name: Print output bundle contents (if any)
-        run: |
-          if [ -d output ]; then
-            find output -type f
-          fi
+          name: stringed_macros_bundle_${{ env.BUNDLE_SEQ }}
+          path: ${{ env.FINAL_ZIP }}
+          retention-days: 1
