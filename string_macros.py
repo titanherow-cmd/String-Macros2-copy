@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.59
+  Current version: v3.18.80
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -282,9 +282,57 @@ STRING MACROS - FEATURE LIST
     The folder is excluded from the main macro scan (not treated as a macro folder).
     Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
 
+41. SAME-NUMBER FOLDER POOLING (Feature 41)
+    Multiple physical subfolders that share the same F-number are merged into
+    a single logical slot in the cycle. The cycle still sees one slot per
+    unique number; the combined pool of all matching folders is used for
+    file selection and always_first/last picking.
+    Examples:
+      F2- Click anvil, F2- Click anvil - Copy, F2- dance
+        → one F2 slot; files from all three folders pooled together
+      F0 optional28-13-, F0 optional28-13- (1)
+        → one F0 slot; 28% chance, pick up to 13 files from combined pool
+    Merge rules:
+      - files / always_first / always_last: concatenated
+      - Boolean tags (is_optional, is_end, is_time_sensitive, is_click_sensitive):
+        OR — if ANY contributing folder has the tag, the merged slot gets it
+      - Scalar tags (optional_chance, max_files): first non-None value wins
+      - Nested subfolders: inner dicts merged by inner slot number
+    A [Pool] log line is printed for each merge: "F2: merged 'name' (N files total)"
+    Trigger: folder named 'LOGOUT, wait, in' (case-insensitive) at the root
+    level of input_macros/.
+    Contents: exactly 3 .json files identified by keyword in filename:
+      - File containing 'proper'  → slot 1: actual logout actions
+      - File containing 'nothing' → slot 2: idle wait period
+      - File containing 'relogin' → slot 3: re-login actions
+    Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
+                     500-800ms buffer → slot3
+    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
+                 Float value, never rounded — full millisecond precision.
+    Features: NO anti-detection features applied (files inserted raw).
+              filter_problematic_keys() is applied on load.
+    Output: written to output_root/- logout.json, then copied to each
+            bundle folder as "@ N LOGOUT.JSON" (same as static logout file).
+    Priority: takes precedence over the legacy '- logout.json' static file.
+    Fallback: if the folder is missing, the old static file search still runs.
+    The folder is excluded from the main macro scan (not treated as a macro folder).
+    Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
+
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.80: Two changes:
+            1. Docstring "Current version:" now matches VERSION (was stuck at v3.18.59).
+               Updated to v3.18.80 and will be kept in sync going forward.
+            2. New Feature 41 — Same-number folder pooling.
+               Multiple physical subfolders sharing the same F-number are merged into
+               one logical cycle slot. Files, always_first/last pools, and boolean tags
+               (optional/end/time-sensitive/click-sensitive) are OR-combined. Scalar
+               tags (optional_chance, max_files) use the first non-None value found.
+               Nested subfolder dicts are merged by inner slot number.
+               Implemented in scan_for_numbered_subfolders (both copies): instead of
+               overwriting numbered_folders[folder_num], checks if the key exists and
+               merges. Prints "[Pool] FN: merged 'name' (X files total)" per merge.
 - v3.18.79: Extended intra-file zero-gap fix (Feature 25) with Part B:
             DragEnd -> DragStart pairs with a gap under 150ms are now shifted
             to enforce a 200ms minimum separation.
@@ -410,7 +458,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.79"
+VERSION = "v3.18.80"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2464,7 +2512,14 @@ def scan_for_numbered_subfolders(base_path):
                         print(f"  Nested folder detected: {item.name} has {len(_nf)} sub-folders inside")
 
             if regular_files or nested_subfolder_files:
-                numbered_folders[folder_num] = {
+                # SAME-NUMBER POOLING (Feature 41):
+                # Multiple physical subfolders can share the same F-number
+                # (e.g. "F2- Click anvil", "F2- Click anvil - Copy", "F2- dance").
+                # They are merged into a single logical slot: files are pooled,
+                # always_first/last pools are combined, and boolean tags are OR-ed.
+                # Scalar tags (optional_chance, max_files) use the first non-None value
+                # encountered across all merged folders with that number.
+                _new_entry = {
                     'files': regular_files,
                     'is_optional': is_optional,
                     'optional_chance': optional_chance,
@@ -2481,6 +2536,48 @@ def scan_for_numbered_subfolders(base_path):
                     'folder_name': item.name,   # stored for name-lookup in specific-folders
                     'folder_path': item,
                 }
+                if folder_num not in numbered_folders:
+                    # First folder with this number — store as-is
+                    numbered_folders[folder_num] = _new_entry
+                else:
+                    # Additional folder with the same number — merge into existing slot
+                    _ex = numbered_folders[folder_num]
+                    _ex['files']        = _ex['files'] + regular_files
+                    _ex['always_first'] = _ex['always_first'] + always_first
+                    _ex['always_last']  = _ex['always_last']  + always_last
+                    # Boolean tags: OR (if any contributing folder has the tag, slot gets it)
+                    _ex['is_optional']      = _ex['is_optional']      or is_optional
+                    _ex['is_end']           = _ex['is_end']           or is_end
+                    _ex['is_optional_end']  = _ex['is_optional_end']  or is_optional_end
+                    _ex['is_time_sensitive'] = _ex['is_time_sensitive'] or is_time_sensitive
+                    _ex['is_click_sensitive'] = _ex['is_click_sensitive'] or is_click_sensitive
+                    # Scalar tags: keep first non-None value
+                    if _ex['optional_chance'] is None and optional_chance is not None:
+                        _ex['optional_chance'] = optional_chance
+                    if _ex['max_files'] is None and _new_entry['max_files'] is not None:
+                        _ex['max_files'] = _new_entry['max_files']
+                    # Nested subfolder files: merge the dicts if both have nested content,
+                    # otherwise use whichever is non-None
+                    if nested_subfolder_files:
+                        if _ex['nested_subfolder_files'] is None:
+                            _ex['nested_subfolder_files']  = nested_subfolder_files
+                            _ex['nested_root_always_first'] = nested_root_af
+                            _ex['nested_root_always_last']  = nested_root_al
+                        else:
+                            # Both have nested: merge their inner subfolder dicts
+                            for _inner_num, _inner_data in nested_subfolder_files.items():
+                                if _inner_num not in _ex['nested_subfolder_files']:
+                                    _ex['nested_subfolder_files'][_inner_num] = _inner_data
+                                else:
+                                    _in = _ex['nested_subfolder_files'][_inner_num]
+                                    _in['files'] = _in['files'] + _inner_data.get('files', [])
+                                    _in['always_first'] = _in['always_first'] + _inner_data.get('always_first', [])
+                                    _in['always_last']  = _in['always_last']  + _inner_data.get('always_last', [])
+                            _ex['nested_root_always_first'] = (_ex.get('nested_root_always_first') or []) + (nested_root_af or [])
+                            _ex['nested_root_always_last']  = (_ex.get('nested_root_always_last')  or []) + (nested_root_al or [])
+                    print(f"   [Pool] F{int(folder_num) if folder_num == int(folder_num) else folder_num}: "
+                          f"merged '{item.name}' into slot "
+                          f"({len(_ex['files'])} files total)")
 
             # Also collect non-JSON files from numbered folders
             for file in item.iterdir():
@@ -3525,7 +3622,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.79"
+VERSION = "v3.18.80"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6209,7 +6306,14 @@ def scan_for_numbered_subfolders(base_path):
                         print(f"  Nested folder detected: {item.name} has {len(_nf)} sub-folders inside")
 
             if regular_files or nested_subfolder_files:
-                numbered_folders[folder_num] = {
+                # SAME-NUMBER POOLING (Feature 41):
+                # Multiple physical subfolders can share the same F-number
+                # (e.g. "F2- Click anvil", "F2- Click anvil - Copy", "F2- dance").
+                # They are merged into a single logical slot: files are pooled,
+                # always_first/last pools are combined, and boolean tags are OR-ed.
+                # Scalar tags (optional_chance, max_files) use the first non-None value
+                # encountered across all merged folders with that number.
+                _new_entry = {
                     'files': regular_files,
                     'is_optional': is_optional,
                     'optional_chance': optional_chance,
@@ -6226,6 +6330,48 @@ def scan_for_numbered_subfolders(base_path):
                     'folder_name': item.name,   # stored for name-lookup in specific-folders
                     'folder_path': item,
                 }
+                if folder_num not in numbered_folders:
+                    # First folder with this number — store as-is
+                    numbered_folders[folder_num] = _new_entry
+                else:
+                    # Additional folder with the same number — merge into existing slot
+                    _ex = numbered_folders[folder_num]
+                    _ex['files']        = _ex['files'] + regular_files
+                    _ex['always_first'] = _ex['always_first'] + always_first
+                    _ex['always_last']  = _ex['always_last']  + always_last
+                    # Boolean tags: OR (if any contributing folder has the tag, slot gets it)
+                    _ex['is_optional']      = _ex['is_optional']      or is_optional
+                    _ex['is_end']           = _ex['is_end']           or is_end
+                    _ex['is_optional_end']  = _ex['is_optional_end']  or is_optional_end
+                    _ex['is_time_sensitive'] = _ex['is_time_sensitive'] or is_time_sensitive
+                    _ex['is_click_sensitive'] = _ex['is_click_sensitive'] or is_click_sensitive
+                    # Scalar tags: keep first non-None value
+                    if _ex['optional_chance'] is None and optional_chance is not None:
+                        _ex['optional_chance'] = optional_chance
+                    if _ex['max_files'] is None and _new_entry['max_files'] is not None:
+                        _ex['max_files'] = _new_entry['max_files']
+                    # Nested subfolder files: merge the dicts if both have nested content,
+                    # otherwise use whichever is non-None
+                    if nested_subfolder_files:
+                        if _ex['nested_subfolder_files'] is None:
+                            _ex['nested_subfolder_files']  = nested_subfolder_files
+                            _ex['nested_root_always_first'] = nested_root_af
+                            _ex['nested_root_always_last']  = nested_root_al
+                        else:
+                            # Both have nested: merge their inner subfolder dicts
+                            for _inner_num, _inner_data in nested_subfolder_files.items():
+                                if _inner_num not in _ex['nested_subfolder_files']:
+                                    _ex['nested_subfolder_files'][_inner_num] = _inner_data
+                                else:
+                                    _in = _ex['nested_subfolder_files'][_inner_num]
+                                    _in['files'] = _in['files'] + _inner_data.get('files', [])
+                                    _in['always_first'] = _in['always_first'] + _inner_data.get('always_first', [])
+                                    _in['always_last']  = _in['always_last']  + _inner_data.get('always_last', [])
+                            _ex['nested_root_always_first'] = (_ex.get('nested_root_always_first') or []) + (nested_root_af or [])
+                            _ex['nested_root_always_last']  = (_ex.get('nested_root_always_last')  or []) + (nested_root_al or [])
+                    print(f"   [Pool] F{int(folder_num) if folder_num == int(folder_num) else folder_num}: "
+                          f"merged '{item.name}' into slot "
+                          f"({len(_ex['files'])} files total)")
 
             # Also collect non-JSON files from numbered folders
             for file in item.iterdir():
