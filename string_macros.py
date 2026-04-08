@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.83
+  Current version: v3.18.84
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -325,6 +325,16 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.84: Two new diagnostic features:
+            1. Short-file manifest flag: any source file whose raw duration is under 500ms
+               is flagged with '????????' suffix in the manifest (e.g. "W62s (3).json ????????").
+               Does NOT affect always_first/last files (those are intentionally short).
+               Threshold: < 500ms raw duration (before any features are applied).
+            2. SEQUENCE REUSED folder tag: when the 500-attempt combination fallback fires
+               (pool exhausted), the output folder is prefixed with "SEQUENCE REUSED " so the
+               operator can immediately see which runs had a depleted file pool.
+               e.g. "(329) Cook straight spot" -> "(329) SEQUENCE REUSED Cook straight spot"
+               Also prints a console warning line during processing.
 - v3.18.83: Two fixes + one new distraction feature:
             1. MANIFEST FIX — Total Original Files was always 0 for doubly-nested
                folders (e.g. FM+COOK where F1/F2 are nested, not flat).
@@ -505,7 +515,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.83"
+VERSION = "v3.18.84"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1722,7 +1732,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
+            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
+            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
+            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
+            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
+            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -2783,6 +2797,7 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
+        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -2954,6 +2969,7 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
+        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -3556,8 +3572,13 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
+        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
+        # prepend a visible warning so the operator knows the pool was exhausted.
+        if tracker._sequence_reused:
+            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
+            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -3738,7 +3759,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.83"
+VERSION = "v3.18.84"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5564,7 +5585,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
+            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
+            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
+            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
+            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
+            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -6625,6 +6650,7 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
+        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -6796,6 +6822,7 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
+        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -7398,8 +7425,13 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
+        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
+        # prepend a visible warning so the operator knows the pool was exhausted.
+        if tracker._sequence_reused:
+            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
+            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
