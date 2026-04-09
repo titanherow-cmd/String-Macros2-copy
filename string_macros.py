@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.83
+  Current version: v3.18.85
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -325,6 +325,28 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.85: Rapid-click protection hardening:
+            1. insert_intra_file_pauses: extended pause-point exclusion from DragStart-only
+               to ALL press/release types (LeftDown, LeftUp, RightDown, RightUp, Click,
+               DragStart). Prevents pauses landing AT or immediately BEFORE any click
+               event, which could stretch click-hold duration or desync rapid sequences.
+            2. apply_cycle_features mid-event pause (Step 3b): same exclusion expansion,
+               so the multiplier-driven random pause also cannot corrupt click timing.
+            3. add_pre_click_jitter: added LeftUp and RightUp to the click_types exclusion
+               set so the 1000ms jitter-free zone anchors to release events as well.
+            4. detect_rapid_click_sequences: added MouseDown/MouseUp as recognised aliases
+               alongside LeftDown/LeftUp — defensive coding for source files that use
+               different event-type naming conventions.
+- v3.18.84: Two new diagnostic features:
+            1. Short-file manifest flag: any source file whose raw duration is under 500ms
+               is flagged with '????????' suffix in the manifest (e.g. "W62s (3).json ????????").
+               Does NOT affect always_first/last files (those are intentionally short).
+               Threshold: < 500ms raw duration (before any features are applied).
+            2. SEQUENCE REUSED folder tag: when the 500-attempt combination fallback fires
+               (pool exhausted), the output folder is prefixed with "SEQUENCE REUSED " so the
+               operator can immediately see which runs had a depleted file pool.
+               e.g. "(329) Cook straight spot" -> "(329) SEQUENCE REUSED Cook straight spot"
+               Also prints a console warning line during processing.
 - v3.18.83: Two fixes + one new distraction feature:
             1. MANIFEST FIX — Total Original Files was always 0 for doubly-nested
                folders (e.g. FM+COOK where F1/F2 are nested, not flat).
@@ -505,7 +527,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.83"
+VERSION = "v3.18.85"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -901,7 +923,9 @@ def detect_rapid_click_sequences(events):
     # LeftUp/RightUp are included so that the protected range spans the full
     # press+release window — the pause exclusion covers all events between
     # the first press and the last release of a rapid sequence.
-    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp"}
+    # Includes MouseDown/MouseUp as aliases — some source files use that naming convention
+    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp",
+                     "MouseDown", "MouseUp"}
 
     protected_ranges = []
 
@@ -986,7 +1010,7 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
         return events, 0, 0, 0.0
     
     # Step 1: Find ALL click times (any click-like event)
-    click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
+    click_types = {'Click', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'DragStart'}
     click_times_sorted = sorted(
         event.get('Time', 0) for event in events if event.get('Type') in click_types
     )
@@ -1142,12 +1166,16 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     first_safe = max(1, int(len(events) * 0.10))
     last_safe  = min(len(events) - 1, int(len(events) * 0.90))
+    # Extended exclusion: never insert a pause AT or immediately BEFORE any
+    # press/release event. This prevents pauses landing between LeftDown and
+    # LeftUp (which would stretch the click hold) or just before a click press.
+    _PRESS_TYPES = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
     valid = [
         idx for idx in range(first_safe, last_safe)
         if idx not in protected_set
         and idx not in drag_indices
-        and events[idx].get('Type') != 'DragStart'
-        and (idx + 1 >= len(events) or events[idx + 1].get('Type') != 'DragStart')
+        and events[idx].get('Type') not in _PRESS_TYPES
+        and (idx + 1 >= len(events) or events[idx + 1].get('Type') not in _PRESS_TYPES)
     ]
 
     if not valid:
@@ -1722,7 +1750,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
+            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
+            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
+            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
+            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
+            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -2446,12 +2478,13 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
                 _p_set.add(_k)
         _fs = max(1, int(len(events_with_pauses) * 0.10))
         _ls = min(len(events_with_pauses) - 1, int(len(events_with_pauses) * 0.90))
+        _PRESS_TYPES_MID = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
         _valid = [
             _i for _i in range(_fs, _ls)
             if _i not in _p_set and _i not in _drag_idx
-            and events_with_pauses[_i].get('Type') != 'DragStart'
+            and events_with_pauses[_i].get('Type') not in _PRESS_TYPES_MID
             and (_i + 1 >= len(events_with_pauses)
-                 or events_with_pauses[_i + 1].get('Type') != 'DragStart')
+                 or events_with_pauses[_i + 1].get('Type') not in _PRESS_TYPES_MID)
         ]
         if _valid:
             _ins = rng.choice(_valid)
@@ -2783,6 +2816,7 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
+        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -2954,6 +2988,7 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
+        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -3556,8 +3591,13 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
+        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
+        # prepend a visible warning so the operator knows the pool was exhausted.
+        if tracker._sequence_reused:
+            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
+            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -3738,7 +3778,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.83"
+VERSION = "v3.18.85"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4752,7 +4792,9 @@ def detect_rapid_click_sequences(events):
     # LeftUp/RightUp are included so that the protected range spans the full
     # press+release window — the pause exclusion covers all events between
     # the first press and the last release of a rapid sequence.
-    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp"}
+    # Includes MouseDown/MouseUp as aliases — some source files use that naming convention
+    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp",
+                     "MouseDown", "MouseUp"}
 
     protected_ranges = []
 
@@ -4837,7 +4879,7 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
         return events, 0, 0, 0.0
     
     # Step 1: Find ALL click times (any click-like event)
-    click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
+    click_types = {'Click', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'DragStart'}
     click_times_sorted = sorted(
         event.get('Time', 0) for event in events if event.get('Type') in click_types
     )
@@ -4993,12 +5035,16 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     first_safe = max(1, int(len(events) * 0.10))
     last_safe  = min(len(events) - 1, int(len(events) * 0.90))
+    # Extended exclusion: never insert a pause AT or immediately BEFORE any
+    # press/release event. This prevents pauses landing between LeftDown and
+    # LeftUp (which would stretch the click hold) or just before a click press.
+    _PRESS_TYPES = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
     valid = [
         idx for idx in range(first_safe, last_safe)
         if idx not in protected_set
         and idx not in drag_indices
-        and events[idx].get('Type') != 'DragStart'
-        and (idx + 1 >= len(events) or events[idx + 1].get('Type') != 'DragStart')
+        and events[idx].get('Type') not in _PRESS_TYPES
+        and (idx + 1 >= len(events) or events[idx + 1].get('Type') not in _PRESS_TYPES)
     ]
 
     if not valid:
@@ -5564,7 +5610,11 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
+            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
+            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
+            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
+            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
+            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -6288,12 +6338,13 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
                 _p_set.add(_k)
         _fs = max(1, int(len(events_with_pauses) * 0.10))
         _ls = min(len(events_with_pauses) - 1, int(len(events_with_pauses) * 0.90))
+        _PRESS_TYPES_MID = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
         _valid = [
             _i for _i in range(_fs, _ls)
             if _i not in _p_set and _i not in _drag_idx
-            and events_with_pauses[_i].get('Type') != 'DragStart'
+            and events_with_pauses[_i].get('Type') not in _PRESS_TYPES_MID
             and (_i + 1 >= len(events_with_pauses)
-                 or events_with_pauses[_i + 1].get('Type') != 'DragStart')
+                 or events_with_pauses[_i + 1].get('Type') not in _PRESS_TYPES_MID)
         ]
         if _valid:
             _ins = rng.choice(_valid)
@@ -6625,6 +6676,7 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
+        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -6796,6 +6848,7 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
+        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -7398,8 +7451,13 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
+        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
+        # prepend a visible warning so the operator knows the pool was exhausted.
+        if tracker._sequence_reused:
+            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
+            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
