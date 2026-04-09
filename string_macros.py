@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.85
+  Current version: v3.18.86
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -325,6 +325,11 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.86: Fix UnboundLocalError for SEQUENCE REUSED (introduced v3.18.84).
+            The tracker._sequence_reused check was placed before ManualHistoryTracker
+            was created, crashing on every run. Fixed by removing the early check and
+            instead doing a folder rename on disk AFTER the manifest is written and all
+            versions are done — at which point tracker is guaranteed to exist.
 - v3.18.85: Rapid-click protection hardening:
             1. insert_intra_file_pauses: extended pause-point exclusion from DragStart-only
                to ALL press/release types (LeftDown, LeftUp, RightDown, RightUp, Click,
@@ -527,7 +532,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.85"
+VERSION = "v3.18.86"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3591,11 +3596,6 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
-        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
-        # prepend a visible warning so the operator knows the pool was exhausted.
-        if tracker._sequence_reused:
-            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
-            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
             output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
@@ -3778,7 +3778,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.85"
+VERSION = "v3.18.86"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7451,11 +7451,6 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
-        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
-        # prepend a visible warning so the operator knows the pool was exhausted.
-        if tracker._sequence_reused:
-            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
-            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
             output_folder_name = f"({args.bundle_id}) {output_folder_name}"
         print(f"\n Processing: {output_folder_name}")
@@ -8134,7 +8129,21 @@ def main():
         manifest_path = out_folder / f"!_MANIFEST_{folder_number}_!.txt"
         manifest_path.write_text("\n".join(manifest_lines), encoding="utf-8")
         print(f"\n   Manifest written: {manifest_path.name}")
-        
+
+        # SEQUENCE REUSED: now that tracker exists and all versions + manifest are written,
+        # rename the output folder on disk if the combination fallback fired at any point.
+        # Must happen AFTER manifest write so the path is valid before we rename.
+        if tracker._sequence_reused:
+            _reused_name = f"SEQUENCE REUSED {output_folder_name}"
+            _new_out_folder = bundle_dir / _reused_name
+            try:
+                out_folder.rename(_new_out_folder)
+                out_folder = _new_out_folder
+                output_folder_name = _reused_name
+                print(f"  [!] SEQUENCE REUSED — folder renamed to: {_reused_name}")
+            except Exception as _re:
+                print(f"  [!] SEQUENCE REUSED — could not rename folder: {_re}")
+
         # Collect combinations for this folder (for bundle-level file)
         # Use the combinations we tracked during THIS RUN
         if folder_combinations_used:
