@@ -1,227 +1,9 @@
-name: String macros (v3.18.74 - 7z compression + subfolder filtering)
-
-on:
-  workflow_dispatch:
-    inputs:
-      specific_folders_input:
-        description: 'Specific folders to include'
-        required: false
-        default: ''
-        type: string
-      enable_chat:
-        description: 'Enable chat inserts (50% of files)'
-        required: false
-        default: false
-        type: boolean
-      use_specific_folders:
-        description: 'Use specific folders only (filter mode)'
-        required: false
-        default: true
-        type: boolean
-      versions:
-        description: 'Total versions to generate *'
-        required: true
-        default: '12'
-      target_minutes:
-        description: 'Target duration per stringed file *'
-        required: true
-        default: '60'
-
-permissions:
-  contents: write
-
-jobs:
-  string:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          
-      - name: Get current BUNDLE_SEQ
-        id: seq
-        run: |
-          if [ -f .github/string_bundle_counter.txt ]; then
-            VAL=$(cat .github/string_bundle_counter.txt)
-          else
-            VAL=1
-          fi
-          echo "BUNDLE_SEQ=$VAL" >> "$GITHUB_ENV"
-      
-      - name: Process specific folders input
-        id: process_folders
-        run: |
-          SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
-          SAVED_FILE=".github/specific_folders_to_include.txt"
-          
-          if [ -n "$SPECIFIC_INPUT" ]; then
-            # User provided input - SAVE IT to permanent file
-            mkdir -p .github
-            echo "$SPECIFIC_INPUT" > "$SAVED_FILE"
-            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=UI input (saved to $SAVED_FILE)" >> "$GITHUB_ENV"
-            echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
-            echo "✓ Saved UI input to $SAVED_FILE for future runs"
-          elif [ -f "$SAVED_FILE" ]; then
-            # Use existing saved file
-            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
-            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
-          else
-            # No input and no file
-            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
-            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
-          fi
-      
-      - name: Display settings
-        run: |
-          echo "========================================"
-          echo "STRING MACROS v3.10.0"
-          echo "========================================"
-          echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
-          echo "Versions: ${{ github.event.inputs.versions }}"
-          echo "Target: ${{ github.event.inputs.target_minutes }} minutes"
-          if [ "${{ inputs.enable_chat }}" = "true" ]; then
-            echo "Chat: ENABLED (50% of files)"
-          else
-            echo "Chat: DISABLED"
-          fi
-          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-            echo "Specific folders: ENABLED"
-            echo "Source: ${{ env.FOLDERS_SOURCE }}"
-            if [ -n "${{ env.FOLDERS_FILE }}" ]; then
-              echo "Folders:"
-              cat "${{ env.FOLDERS_FILE }}"
-            fi
-          else
-            echo "Specific folders: DISABLED (all folders)"
-          fi
-          echo "========================================"
-        
-      - name: Execute string macros script
-        run: |
-          mkdir -p output
-          
-          # Build arguments array
-          ARGS=(
-            "input_macros"
-            "output"
-            "--versions" "${{ github.event.inputs.versions }}"
-            "--target-minutes" "${{ github.event.inputs.target_minutes }}"
-            "--bundle-id" "${{ env.BUNDLE_SEQ }}"
-          )
-          
-          # Add --no-chat if disabled
-          if [ "${{ inputs.enable_chat }}" = "false" ]; then
-            ARGS+=("--no-chat")
-          fi
-          
-          # Add --specific-folders if enabled
-          if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
-            ARGS+=("--specific-folders" "${{ env.FOLDERS_FILE }}")
-          fi
-          
-          # Execute
-          echo "Running: python3 string_macros.py ${ARGS[@]}"
-          echo ""
-          python3 string_macros.py "${ARGS[@]}"
-            
-      - name: Commit and Push Updates
-        run: |
-          NEW_VAL=$((BUNDLE_SEQ + 1))
-          mkdir -p .github
-          echo "$NEW_VAL" > .github/string_bundle_counter.txt
-          
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # Add counter
-          git add .github/string_bundle_counter.txt
-          
-          # Also add folders file if it was updated from UI input
-          if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
-            git add ".github/specific_folders_to_include.txt"
-            git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
-          else
-            git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
-          fi
-          
-          git push || echo "Push failed"
-            
-      - name: Add combination file to output
-        run: |
-          BUNDLE_DIR="output/stringed_bundle_${{ env.BUNDLE_SEQ }}"
-          COMBO_FILE="output/COMBINATION_HISTORY_${{ env.BUNDLE_SEQ }}.txt"
-          
-          if [ -f "$COMBO_FILE" ]; then
-            cp "$COMBO_FILE" "$BUNDLE_DIR/" 2>/dev/null || echo "Could not copy combination file"
-            echo "✓ Copied combination file to bundle"
-          else
-            echo "⚠️ No combination file found at $COMBO_FILE"
-          fi
-            
-      - name: Create ZIP artifact
-        run: |
-          BUNDLE_NAME="stringed_bundle_${{ env.BUNDLE_SEQ }}"
-          ZIP_FILE="stringed_macros_${{ env.BUNDLE_SEQ }}.7z"
-          
-          echo "Creating ZIP from: output/$BUNDLE_NAME"
-          ls -R output/
-          
-          if [ -d "output/$BUNDLE_NAME" ]; then
-            # Check if specific folders mode is enabled
-            if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-              # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
-              echo "Specific folders mode: Creating flat 7z structure..."
-
-              # Check if directory has any content
-              if [ -z "$(ls -A "output/$BUNDLE_NAME")" ]; then
-                echo "✗ Error: Directory output/$BUNDLE_NAME is empty!"
-                exit 1
-              fi
-
-              # List contents before zipping
-              echo "Contents to zip:"
-              ls -la "output/$BUNDLE_NAME"
-
-              # 7z max compression, flat structure
-              cd "output/$BUNDLE_NAME"
-              7z a -mx=9 -mmt=2 "../../$ZIP_FILE" .
-              cd ../..
-              echo "✓ Created flat structure: $ZIP_FILE"
-            else
-              # NORMAL MODE: Zip the entire bundle directory
-              echo "Normal mode: Creating standard 7z structure..."
-              7z a -mx=9 -mmt=2 "$ZIP_FILE" "output/$BUNDLE_NAME"
-              echo "✓ Created: $ZIP_FILE"
-            fi
-          else
-            echo "✗ Error: Directory output/$BUNDLE_NAME was not found!"
-            exit 1
-          fi
-          echo "FINAL_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
-          
-      - name: Upload stringed ZIP artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: stringed_macros_bundle_${{ env.BUNDLE_SEQ }}
-          path: ${{ env.FINAL_ZIP }}
-          retention-days: 1
 #!/usr/bin/env python3
 """
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.85
+  Current version: v3.18.83
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -543,28 +325,6 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
-- v3.18.85: Rapid-click protection hardening:
-            1. insert_intra_file_pauses: extended pause-point exclusion from DragStart-only
-               to ALL press/release types (LeftDown, LeftUp, RightDown, RightUp, Click,
-               DragStart). Prevents pauses landing AT or immediately BEFORE any click
-               event, which could stretch click-hold duration or desync rapid sequences.
-            2. apply_cycle_features mid-event pause (Step 3b): same exclusion expansion,
-               so the multiplier-driven random pause also cannot corrupt click timing.
-            3. add_pre_click_jitter: added LeftUp and RightUp to the click_types exclusion
-               set so the 1000ms jitter-free zone anchors to release events as well.
-            4. detect_rapid_click_sequences: added MouseDown/MouseUp as recognised aliases
-               alongside LeftDown/LeftUp — defensive coding for source files that use
-               different event-type naming conventions.
-- v3.18.84: Two new diagnostic features:
-            1. Short-file manifest flag: any source file whose raw duration is under 500ms
-               is flagged with '????????' suffix in the manifest (e.g. "W62s (3).json ????????").
-               Does NOT affect always_first/last files (those are intentionally short).
-               Threshold: < 500ms raw duration (before any features are applied).
-            2. SEQUENCE REUSED folder tag: when the 500-attempt combination fallback fires
-               (pool exhausted), the output folder is prefixed with "SEQUENCE REUSED " so the
-               operator can immediately see which runs had a depleted file pool.
-               e.g. "(329) Cook straight spot" -> "(329) SEQUENCE REUSED Cook straight spot"
-               Also prints a console warning line during processing.
 - v3.18.83: Two fixes + one new distraction feature:
             1. MANIFEST FIX — Total Original Files was always 0 for doubly-nested
                folders (e.g. FM+COOK where F1/F2 are nested, not flat).
@@ -745,7 +505,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.85"
+VERSION = "v3.18.83"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1141,9 +901,7 @@ def detect_rapid_click_sequences(events):
     # LeftUp/RightUp are included so that the protected range spans the full
     # press+release window — the pause exclusion covers all events between
     # the first press and the last release of a rapid sequence.
-    # Includes MouseDown/MouseUp as aliases — some source files use that naming convention
-    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp",
-                     "MouseDown", "MouseUp"}
+    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp"}
 
     protected_ranges = []
 
@@ -1228,7 +986,7 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
         return events, 0, 0, 0.0
     
     # Step 1: Find ALL click times (any click-like event)
-    click_types = {'Click', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'DragStart'}
+    click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
     click_times_sorted = sorted(
         event.get('Time', 0) for event in events if event.get('Type') in click_types
     )
@@ -1384,16 +1142,12 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     first_safe = max(1, int(len(events) * 0.10))
     last_safe  = min(len(events) - 1, int(len(events) * 0.90))
-    # Extended exclusion: never insert a pause AT or immediately BEFORE any
-    # press/release event. This prevents pauses landing between LeftDown and
-    # LeftUp (which would stretch the click hold) or just before a click press.
-    _PRESS_TYPES = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
     valid = [
         idx for idx in range(first_safe, last_safe)
         if idx not in protected_set
         and idx not in drag_indices
-        and events[idx].get('Type') not in _PRESS_TYPES
-        and (idx + 1 >= len(events) or events[idx + 1].get('Type') not in _PRESS_TYPES)
+        and events[idx].get('Type') != 'DragStart'
+        and (idx + 1 >= len(events) or events[idx + 1].get('Type') != 'DragStart')
     ]
 
     if not valid:
@@ -1968,11 +1722,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
-            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
-            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
-            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
-            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
+            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -2696,13 +2446,12 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
                 _p_set.add(_k)
         _fs = max(1, int(len(events_with_pauses) * 0.10))
         _ls = min(len(events_with_pauses) - 1, int(len(events_with_pauses) * 0.90))
-        _PRESS_TYPES_MID = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
         _valid = [
             _i for _i in range(_fs, _ls)
             if _i not in _p_set and _i not in _drag_idx
-            and events_with_pauses[_i].get('Type') not in _PRESS_TYPES_MID
+            and events_with_pauses[_i].get('Type') != 'DragStart'
             and (_i + 1 >= len(events_with_pauses)
-                 or events_with_pauses[_i + 1].get('Type') not in _PRESS_TYPES_MID)
+                 or events_with_pauses[_i + 1].get('Type') != 'DragStart')
         ]
         if _valid:
             _ins = rng.choice(_valid)
@@ -3034,7 +2783,6 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
-        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -3206,7 +2954,6 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
-        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -3809,13 +3556,8 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
-        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
-        # prepend a visible warning so the operator knows the pool was exhausted.
-        if tracker._sequence_reused:
-            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
-            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -3996,7 +3738,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.85"
+VERSION = "v3.18.83"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5010,9 +4752,7 @@ def detect_rapid_click_sequences(events):
     # LeftUp/RightUp are included so that the protected range spans the full
     # press+release window — the pause exclusion covers all events between
     # the first press and the last release of a rapid sequence.
-    # Includes MouseDown/MouseUp as aliases — some source files use that naming convention
-    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp",
-                     "MouseDown", "MouseUp"}
+    _CLICK_DETECT = {"Click", "DragStart", "LeftDown", "LeftUp", "RightDown", "RightUp"}
 
     protected_ranges = []
 
@@ -5097,7 +4837,7 @@ def add_pre_click_jitter(events: list, rng: random.Random) -> tuple:
         return events, 0, 0, 0.0
     
     # Step 1: Find ALL click times (any click-like event)
-    click_types = {'Click', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'DragStart'}
+    click_types = {'Click', 'LeftDown', 'RightDown', 'DragStart'}
     click_times_sorted = sorted(
         event.get('Time', 0) for event in events if event.get('Type') in click_types
     )
@@ -5253,16 +4993,12 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     first_safe = max(1, int(len(events) * 0.10))
     last_safe  = min(len(events) - 1, int(len(events) * 0.90))
-    # Extended exclusion: never insert a pause AT or immediately BEFORE any
-    # press/release event. This prevents pauses landing between LeftDown and
-    # LeftUp (which would stretch the click hold) or just before a click press.
-    _PRESS_TYPES = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
     valid = [
         idx for idx in range(first_safe, last_safe)
         if idx not in protected_set
         and idx not in drag_indices
-        and events[idx].get('Type') not in _PRESS_TYPES
-        and (idx + 1 >= len(events) or events[idx + 1].get('Type') not in _PRESS_TYPES)
+        and events[idx].get('Type') != 'DragStart'
+        and (idx + 1 >= len(events) or events[idx + 1].get('Type') != 'DragStart')
     ]
 
     if not valid:
@@ -5828,11 +5564,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         # Update timeline and track THIS file's end time
         if cycle_events:
             timeline = cycle_events[-1]['Time']
-            # SHORT FILE WARNING: flag files whose raw duration is under 500ms
-            # (< 0.5s) as almost certainly broken/accidental — mark in manifest.
-            _raw_dur = (max(e.get('Time', 0) for e in events) - min(e.get('Time', 0) for e in events)) if len(events) > 1 else 0
-            _label_out = f"{file_label} ????????" if _raw_dur < 500 and not file_label.startswith('[') else file_label
-            file_info_list.append((folder_num, _label_out, is_dmwm, timeline))
+            file_info_list.append((folder_num, file_label, is_dmwm, timeline))
         files_added += 1
     
     # Main cycle building
@@ -6556,13 +6288,12 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
                 _p_set.add(_k)
         _fs = max(1, int(len(events_with_pauses) * 0.10))
         _ls = min(len(events_with_pauses) - 1, int(len(events_with_pauses) * 0.90))
-        _PRESS_TYPES_MID = {'DragStart', 'LeftDown', 'LeftUp', 'RightDown', 'RightUp', 'Click'}
         _valid = [
             _i for _i in range(_fs, _ls)
             if _i not in _p_set and _i not in _drag_idx
-            and events_with_pauses[_i].get('Type') not in _PRESS_TYPES_MID
+            and events_with_pauses[_i].get('Type') != 'DragStart'
             and (_i + 1 >= len(events_with_pauses)
-                 or events_with_pauses[_i + 1].get('Type') not in _PRESS_TYPES_MID)
+                 or events_with_pauses[_i + 1].get('Type') != 'DragStart')
         ]
         if _valid:
             _ins = rng.choice(_valid)
@@ -6894,7 +6625,6 @@ class ManualHistoryTracker:
         
         # Load ALL combinations from ALL files in the folder
         self.used_combinations = self._load_all_combinations()
-        self._sequence_reused = False  # Set True when the 500-attempt fallback fires
 
         # Per-subfolder virtual queues: each subfolder gets its own shuffled
         # queue so no file repeats until all files in that subfolder are used.
@@ -7066,7 +6796,6 @@ class ManualHistoryTracker:
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
-        self._sequence_reused = True  # Flag so output folder gets SEQUENCE REUSED prefix
         combination = []
         for folder_num in sorted(self.subfolder_files.keys()):
             folder_data = self.subfolder_files[folder_num]
@@ -7669,13 +7398,8 @@ def main():
         
         # Create output folder - append bundle ID in specific folders mode
         output_folder_name = cleaned_folder_name
-        # SEQUENCE REUSED tag: if the combination fallback fired for this folder,
-        # prepend a visible warning so the operator knows the pool was exhausted.
-        if tracker._sequence_reused:
-            output_folder_name = f"SEQUENCE REUSED {output_folder_name}"
-            print(f"  [!] SEQUENCE REUSED — combination pool exhausted for this folder")
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
+            output_folder_name = f"({args.bundle_id}) {cleaned_folder_name}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
