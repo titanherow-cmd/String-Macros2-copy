@@ -1,13 +1,30 @@
-name: String macros (v3.18.74 - 7z compression + subfolder filtering)
+name: String macros (v3.18.86 - 7z compression + subfolder filtering)
 
 on:
   workflow_dispatch:
     inputs:
-      specific_folders_input:
-        description: 'Specific folders to include'
+      folder_choice:
+        description: 'Folder to process (uses saved file if blank)'
         required: false
-        default: ''
-        type: string
+        default: '-- use saved / all folders --'
+        type: choice
+        options:
+          - '-- use saved / all folders --'
+          - '18- WC- draynor willow- inzoom- S slightly SE'
+          - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '22- Craft Dia- edge- lamp bank Z- S'
+          - '55- Mining- alkharid U1T- inz- N- TIME SENSITIVE'
+          - '57- Finish up noted smth alch leftover'
+          - '58- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Mining- Mining Guild- inz- N- TIME SENSITIVE'
+          - '62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '5- FM- NoFire Zspotfire busy world- GE- intz- W- TIME SENSITIVE'
+          - 'Cook straight spot'
+          - 'Fishing click+time sensitive - Copy'
+          - 'Fishing experimental- click+time sensitive'
+          - 'FM straight spot- TIME SENSITIVE'
+          - 'FM+COOK straight spot'
+          - 'TEST'
       enable_chat:
         description: 'Enable chat inserts (50% of files)'
         required: false
@@ -59,24 +76,24 @@ jobs:
       - name: Process specific folders input
         id: process_folders
         run: |
-          SPECIFIC_INPUT="${{ github.event.inputs.specific_folders_input }}"
+          FOLDER_CHOICE="${{ github.event.inputs.folder_choice }}"
           SAVED_FILE=".github/specific_folders_to_include.txt"
           
-          if [ -n "$SPECIFIC_INPUT" ]; then
-            # User provided input - SAVE IT to permanent file
+          if [ "$FOLDER_CHOICE" != "-- use saved / all folders --" ] && [ -n "$FOLDER_CHOICE" ]; then
+            # User selected a specific folder from dropdown - SAVE IT
             mkdir -p .github
-            echo "$SPECIFIC_INPUT" > "$SAVED_FILE"
+            echo "$FOLDER_CHOICE" > "$SAVED_FILE"
             echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=UI input (saved to $SAVED_FILE)" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=dropdown selection: $FOLDER_CHOICE" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
-            echo "✓ Saved UI input to $SAVED_FILE for future runs"
+            echo "✓ Saved dropdown selection to $SAVED_FILE"
           elif [ -f "$SAVED_FILE" ]; then
             # Use existing saved file
             echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
           else
-            # No input and no file
+            # No selection and no saved file - process ALL folders
             echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
@@ -85,7 +102,7 @@ jobs:
       - name: Display settings
         run: |
           echo "========================================"
-          echo "STRING MACROS v3.10.0"
+          echo "STRING MACROS v3.18.86"
           echo "========================================"
           echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
           echo "Versions: ${{ github.event.inputs.versions }}"
@@ -147,7 +164,7 @@ jobs:
           # Add counter
           git add .github/string_bundle_counter.txt
           
-          # Also add folders file if it was updated from UI input
+          # Also add folders file if it was updated from dropdown selection
           if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
             git add ".github/specific_folders_to_include.txt"
             git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
