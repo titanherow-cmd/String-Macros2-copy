@@ -1,0 +1,66 @@
+[
+  {
+    "Type": "KeyUp",
+    "Time": 157,
+    "X": null,
+    "Y": null,
+    "Delta": null,
+    "KeyCode": 35
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125367,
+    "X": 1489,
+    "Y": 472,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125376,
+    "X": 1480,
+    "Y": 467,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125383,
+    "X": 1462,
+    "Y": 454,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125392,
+    "X": 1444,
+    "Y": 445,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125399,
+    "X": 1426,
+    "Y": 436,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125407,
+    "X": 1413,
+    "Y": 427,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 125416,
+    "X": 1404,
+    "Y": 422,
+    "Delta": null,
+    "KeyCode": null
+  }
+]
