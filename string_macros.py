@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.86
+  Current version: v3.18.87
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -325,6 +325,20 @@ STRING MACROS - FEATURE LIST
 ===========================================================================
 
 CHANGELOG (recent):
+- v3.18.87: Fix nested-folder inner-tracker exhaustion (root cause of F6-Wait random skip).
+            BUG: In get_next_combination's 500-attempt loop, each failed outer attempt
+            called _nested_tracker.get_next_combination() which permanently marked that
+            inner combination as used — even though the outer sig was rejected. With 500
+            outer attempts per call, the inner tracker (e.g. FM's F1-F6 tracker) had 500
+            combinations consumed per outer get_next_combination() call. Over many cycles
+            this exhausted the inner tracker far faster than the actual combination space,
+            triggering the fallback which does not handle nested folders, causing the last
+            subfolder (F6-Wait) to silently disappear from some cycles.
+            FIX: Track inner tracker signatures committed during each outer attempt
+            (_inner_commits list). If the outer signature is already in used_combinations
+            (rejected), roll back all inner commits with used_combinations.discard().
+            Inner combinations are now only permanently consumed when the outer combination
+            is actually accepted and returned.
 - v3.18.86: Fix UnboundLocalError for SEQUENCE REUSED (introduced v3.18.84).
             The tracker._sequence_reused check was placed before ManualHistoryTracker
             was created, crashing on every run. Fixed by removing the early check and
@@ -532,7 +546,7 @@ CHANGELOG (recent):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.86"
+VERSION = "v3.18.87"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -2919,6 +2933,15 @@ class ManualHistoryTracker:
         for _ in range(max_attempts):
             # Pick random combination
             combination = []
+            # Track inner-tracker signatures committed during this attempt so
+            # we can roll them back if the OUTER signature is already used.
+            # Without this, each failed outer attempt permanently consumes one
+            # inner-tracker slot (marking it used even though it was never
+            # added to any output file), which exhausts inner trackers far too
+            # quickly and causes the fallback to fire — often losing the last
+            # subfolder (e.g. F6-Wait) in doubly-nested structures.
+            _inner_commits = []   # list of (tracker, sig) to undo on rejection
+
             for folder_num in sorted(self.subfolder_files.keys()):
                 folder_data = self.subfolder_files[folder_num]
                 
@@ -2957,6 +2980,15 @@ class ManualHistoryTracker:
                     for _ in range(_n):
                         _sub_combo = _nested_tracker.get_next_combination()
                         if _sub_combo:
+                            # Record what the inner tracker just committed so we
+                            # can undo it if the outer signature is rejected.
+                            _inner_sig = "|".join(
+                                f"F{int(fn2) if fn2 == int(fn2) else fn2}=" +
+                                "+".join(_combo_fp_sig(fp2, ii)
+                                         for ii, fp2 in enumerate(fl2 if isinstance(fl2, list) else [fl2]))
+                                for fn2, fl2 in _sub_combo
+                            )
+                            _inner_commits.append((_nested_tracker, _inner_sig))
                             _picked_nested.append({
                                 '_nested': True,
                                 'combo': _sub_combo,
@@ -2977,6 +3009,9 @@ class ManualHistoryTracker:
                         combination.append((folder_num, _picked))
             
             if not combination:
+                # Roll back any inner commits for this failed attempt
+                for _inner_t, _inner_s in _inner_commits:
+                    _inner_t.used_combinations.discard(_inner_s)
                 continue
             
             # Create signature (format folder numbers cleanly)
@@ -2990,6 +3025,11 @@ class ManualHistoryTracker:
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)  # Mark as used
                 return combination
+            
+            # Outer signature already used — roll back inner tracker commits
+            # so those inner combinations remain available for future attempts
+            for _inner_t, _inner_s in _inner_commits:
+                _inner_t.used_combinations.discard(_inner_s)
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
@@ -3778,7 +3818,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.86"
+VERSION = "v3.18.87"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6774,6 +6814,15 @@ class ManualHistoryTracker:
         for _ in range(max_attempts):
             # Pick random combination
             combination = []
+            # Track inner-tracker signatures committed during this attempt so
+            # we can roll them back if the OUTER signature is already used.
+            # Without this, each failed outer attempt permanently consumes one
+            # inner-tracker slot (marking it used even though it was never
+            # added to any output file), which exhausts inner trackers far too
+            # quickly and causes the fallback to fire — often losing the last
+            # subfolder (e.g. F6-Wait) in doubly-nested structures.
+            _inner_commits = []   # list of (tracker, sig) to undo on rejection
+
             for folder_num in sorted(self.subfolder_files.keys()):
                 folder_data = self.subfolder_files[folder_num]
                 
@@ -6812,6 +6861,15 @@ class ManualHistoryTracker:
                     for _ in range(_n):
                         _sub_combo = _nested_tracker.get_next_combination()
                         if _sub_combo:
+                            # Record what the inner tracker just committed so we
+                            # can undo it if the outer signature is rejected.
+                            _inner_sig = "|".join(
+                                f"F{int(fn2) if fn2 == int(fn2) else fn2}=" +
+                                "+".join(_combo_fp_sig(fp2, ii)
+                                         for ii, fp2 in enumerate(fl2 if isinstance(fl2, list) else [fl2]))
+                                for fn2, fl2 in _sub_combo
+                            )
+                            _inner_commits.append((_nested_tracker, _inner_sig))
                             _picked_nested.append({
                                 '_nested': True,
                                 'combo': _sub_combo,
@@ -6832,6 +6890,9 @@ class ManualHistoryTracker:
                         combination.append((folder_num, _picked))
             
             if not combination:
+                # Roll back any inner commits for this failed attempt
+                for _inner_t, _inner_s in _inner_commits:
+                    _inner_t.used_combinations.discard(_inner_s)
                 continue
             
             # Create signature (format folder numbers cleanly)
@@ -6845,6 +6906,11 @@ class ManualHistoryTracker:
             if signature not in self.used_combinations:
                 self.used_combinations.add(signature)  # Mark as used
                 return combination
+            
+            # Outer signature already used — roll back inner tracker commits
+            # so those inner combinations remain available for future attempts
+            for _inner_t, _inner_s in _inner_commits:
+                _inner_t.used_combinations.discard(_inner_s)
         
         # Fallback: return random (may repeat)
         print(f"  [!]?  Using random combination (may repeat)")
