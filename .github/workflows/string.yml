@@ -1,12 +1,12 @@
-name: String macros (v3.18.87 - 7z compression + subfolder filtering)
+name: String macros (v3.18.88 - 7z compression + subfolder filtering)
 
 on:
   workflow_dispatch:
     inputs:
       folder_1:
-        description: 'Folder 1  |  ALL FOLDERS = run everything'
+        description: 'Folder 1  |  ALL FOLDERS = run everything  |  leave all -- none -- to repeat last run'
         required: false
-        default: '22- Craft Dia- edge- lamp bank Z- S'
+        default: '-- none --'
         type: choice
         options:
           - 'ALL FOLDERS'
@@ -123,13 +123,14 @@ jobs:
           F2="${{ github.event.inputs.folder_2 }}"
           F3="${{ github.event.inputs.folder_3 }}"
 
-          # If ANY dropdown is set to ALL FOLDERS → run everything, clear saved file
+          # ALL FOLDERS in any slot → run everything, clear saved file
           if [ "$F1" = "ALL FOLDERS" ] || [ "$F2" = "ALL FOLDERS" ] || [ "$F3" = "ALL FOLDERS" ]; then
             rm -f "$SAVED_FILE"
             echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
             echo "USE_SPECIFIC=false" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=ALL FOLDERS selected — processing entire input_macros" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=ALL FOLDERS — processing entire input_macros" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+
           else
             # Collect specific non-blank selections
             SELECTED_FOLDERS=()
@@ -140,7 +141,7 @@ jobs:
             done
 
             if [ ${#SELECTED_FOLDERS[@]} -gt 0 ]; then
-              # One or more folders chosen — save and use them
+              # One or more folders explicitly chosen — save and use them
               mkdir -p .github
               printf '%s\n' "${SELECTED_FOLDERS[@]}" > "$SAVED_FILE"
               echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
@@ -149,17 +150,21 @@ jobs:
               echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
               echo "Saved ${#SELECTED_FOLDERS[@]} folder(s) to $SAVED_FILE:"
               printf '  - %s\n' "${SELECTED_FOLDERS[@]}"
+
             elif [ -f "$SAVED_FILE" ]; then
-              # All dropdowns left as -- none -- → use last saved selection
+              # All dropdowns left as -- none -- → reuse the last saved selection
               echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
               echo "USE_SPECIFIC=true" >> "$GITHUB_ENV"
-              echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
+              echo "FOLDERS_SOURCE=repeating last saved selection from $SAVED_FILE" >> "$GITHUB_ENV"
               echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+              echo "Repeating last selection:"
+              cat "$SAVED_FILE"
+
             else
-              # Nothing selected and no saved file → run everything
+              # Nothing chosen and no saved file → run everything
               echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
               echo "USE_SPECIFIC=false" >> "$GITHUB_ENV"
-              echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
+              echo "FOLDERS_SOURCE=no selection and no saved file — processing ALL folders" >> "$GITHUB_ENV"
               echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
             fi
           fi
@@ -167,7 +172,7 @@ jobs:
       - name: Display settings
         run: |
           echo "========================================"
-          echo "STRING MACROS v3.18.87"
+          echo "STRING MACROS v3.18.88"
           echo "========================================"
           echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
           echo "Versions: ${{ github.event.inputs.versions }}"
