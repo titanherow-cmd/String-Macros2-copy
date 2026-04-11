@@ -3,13 +3,101 @@ name: String macros (v3.18.86 - 7z compression + subfolder filtering)
 on:
   workflow_dispatch:
     inputs:
-      folder_choice:
-        description: 'Folder to process (uses saved file if blank)'
+      folder_1:
+        description: 'Folder 1 (required if using specific folders)'
         required: false
-        default: '-- use saved / all folders --'
+        default: '-- none --'
         type: choice
         options:
-          - '-- use saved / all folders --'
+          - '-- none --'
+          - '18- WC- draynor willow- inzoom- S slightly SE'
+          - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '22- Craft Dia- edge- lamp bank Z- S'
+          - '55- Mining- alkharid U1T- inz- N- TIME SENSITIVE'
+          - '57- Finish up noted smth alch leftover'
+          - '58- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Mining- Mining Guild- inz- N- TIME SENSITIVE'
+          - '62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '5- FM- NoFire Zspotfire busy world- GE- intz- W- TIME SENSITIVE'
+          - 'Cook straight spot'
+          - 'Fishing click+time sensitive - Copy'
+          - 'Fishing experimental- click+time sensitive'
+          - 'FM straight spot- TIME SENSITIVE'
+          - 'FM+COOK straight spot'
+          - 'TEST'
+      folder_2:
+        description: 'Folder 2'
+        required: false
+        default: '-- none --'
+        type: choice
+        options:
+          - '-- none --'
+          - '18- WC- draynor willow- inzoom- S slightly SE'
+          - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '22- Craft Dia- edge- lamp bank Z- S'
+          - '55- Mining- alkharid U1T- inz- N- TIME SENSITIVE'
+          - '57- Finish up noted smth alch leftover'
+          - '58- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Mining- Mining Guild- inz- N- TIME SENSITIVE'
+          - '62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '5- FM- NoFire Zspotfire busy world- GE- intz- W- TIME SENSITIVE'
+          - 'Cook straight spot'
+          - 'Fishing click+time sensitive - Copy'
+          - 'Fishing experimental- click+time sensitive'
+          - 'FM straight spot- TIME SENSITIVE'
+          - 'FM+COOK straight spot'
+          - 'TEST'
+      folder_3:
+        description: 'Folder 3'
+        required: false
+        default: '-- none --'
+        type: choice
+        options:
+          - '-- none --'
+          - '18- WC- draynor willow- inzoom- S slightly SE'
+          - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '22- Craft Dia- edge- lamp bank Z- S'
+          - '55- Mining- alkharid U1T- inz- N- TIME SENSITIVE'
+          - '57- Finish up noted smth alch leftover'
+          - '58- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Mining- Mining Guild- inz- N- TIME SENSITIVE'
+          - '62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '5- FM- NoFire Zspotfire busy world- GE- intz- W- TIME SENSITIVE'
+          - 'Cook straight spot'
+          - 'Fishing click+time sensitive - Copy'
+          - 'Fishing experimental- click+time sensitive'
+          - 'FM straight spot- TIME SENSITIVE'
+          - 'FM+COOK straight spot'
+          - 'TEST'
+      folder_4:
+        description: 'Folder 4'
+        required: false
+        default: '-- none --'
+        type: choice
+        options:
+          - '-- none --'
+          - '18- WC- draynor willow- inzoom- S slightly SE'
+          - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '22- Craft Dia- edge- lamp bank Z- S'
+          - '55- Mining- alkharid U1T- inz- N- TIME SENSITIVE'
+          - '57- Finish up noted smth alch leftover'
+          - '58- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Mining- Mining Guild- inz- N- TIME SENSITIVE'
+          - '62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '5- FM- NoFire Zspotfire busy world- GE- intz- W- TIME SENSITIVE'
+          - 'Cook straight spot'
+          - 'Fishing click+time sensitive - Copy'
+          - 'Fishing experimental- click+time sensitive'
+          - 'FM straight spot- TIME SENSITIVE'
+          - 'FM+COOK straight spot'
+          - 'TEST'
+      folder_5:
+        description: 'Folder 5'
+        required: false
+        default: '-- none --'
+        type: choice
+        options:
+          - '-- none --'
           - '18- WC- draynor willow- inzoom- S slightly SE'
           - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
           - '22- Craft Dia- edge- lamp bank Z- S'
@@ -76,24 +164,37 @@ jobs:
       - name: Process specific folders input
         id: process_folders
         run: |
-          FOLDER_CHOICE="${{ github.event.inputs.folder_choice }}"
           SAVED_FILE=".github/specific_folders_to_include.txt"
-          
-          if [ "$FOLDER_CHOICE" != "-- use saved / all folders --" ] && [ -n "$FOLDER_CHOICE" ]; then
-            # User selected a specific folder from dropdown - SAVE IT
+
+          # Collect all non-none dropdown selections into an array
+          SELECTED_FOLDERS=()
+          for SLOT in \
+            "${{ github.event.inputs.folder_1 }}" \
+            "${{ github.event.inputs.folder_2 }}" \
+            "${{ github.event.inputs.folder_3 }}" \
+            "${{ github.event.inputs.folder_4 }}" \
+            "${{ github.event.inputs.folder_5 }}"; do
+            if [ "$SLOT" != "-- none --" ] && [ -n "$SLOT" ]; then
+              SELECTED_FOLDERS+=("$SLOT")
+            fi
+          done
+
+          if [ ${#SELECTED_FOLDERS[@]} -gt 0 ]; then
+            # One or more folders chosen — save them (one per line)
             mkdir -p .github
-            echo "$FOLDER_CHOICE" > "$SAVED_FILE"
+            printf '%s\n' "${SELECTED_FOLDERS[@]}" > "$SAVED_FILE"
             echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=dropdown selection: $FOLDER_CHOICE" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=dropdown (${#SELECTED_FOLDERS[@]} folder(s) selected)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
-            echo "✓ Saved dropdown selection to $SAVED_FILE"
+            echo "Saved ${#SELECTED_FOLDERS[@]} folder(s) to $SAVED_FILE:"
+            printf '  - %s\n' "${SELECTED_FOLDERS[@]}"
           elif [ -f "$SAVED_FILE" ]; then
-            # Use existing saved file
+            # No dropdown selection — use existing saved file
             echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
           else
-            # No selection and no saved file - process ALL folders
+            # Nothing selected, no saved file — process ALL folders
             echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
             echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
@@ -164,7 +265,7 @@ jobs:
           # Add counter
           git add .github/string_bundle_counter.txt
           
-          # Also add folders file if it was updated from dropdown selection
+          # Also add folders file if it was updated from dropdown selections
           if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
             git add ".github/specific_folders_to_include.txt"
             git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
