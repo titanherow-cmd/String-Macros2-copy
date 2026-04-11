@@ -1,0 +1,225 @@
+=== BUNDLE 348 COMBINATION HISTORY ===
+
+[62- SSmth+Smth R2H+NotedAlch- Varr- zoomanvil left- W]
+F1=WBMNR (16).json|F2=CAA (16).json|F3=SRADM (52).json|F4=FMF SmthAlch (32).json
+F1=WBMNR (72).json|F2=CAA (70).json|F3=SRADM (38).json|F4=FMF SmthAlch (53).json|F5=N(B1w (10).json+CTTAA (38).json+CASR (6).json+CBD (42).json)+N(B1w (105).json+CTTAA (28).json+CASR (15).json+CBD (24).json+Smithonly (5).json)|F6=FUNSAL (36).json+FUNSAL (87).json+FUNSAL (62).json+FUNSAL (89).json+FUNSAL (21).json+FUNSAL (53).json+FUNSAL (67).json+FUNSAL (49).json+FUNSAL (38).json+FUNSAL (1).json
+F1=WBMNR (53).json|F2=CAA (54).json|F3=SRADM (19).json|F4=FMF SmthAlch (41).json
+F1=WBMNR (77).json|F2=CAA (52).json|F3=SRADM (46).json|F4=FMF SmthAlch (6).json|F6=FUNSAL (72).json+FUNSAL (20).json+FUNSAL (51).json+FUNSAL (14).json+FUNSAL (25).json+FUNSAL (86).json+FUNSAL (12).json+FUNSAL (31).json+FUNSAL (5).json+FUNSAL (71).json
+F1=WBMNR (29).json|F2=CAA (24).json|F3=SRADM (10).json|F4=FMF SmthAlch (14).json|F6=FUNSAL (41).json+FUNSAL (75).json+FUNSAL (48).json+FUNSAL (2).json
+F1=WBMNR (63).json|F2=CAA (28).json|F3=SRADM (59).json|F4=FMF SmthAlch (45).json|F6=FUNSAL (59).json
+F1=WBMNR (11).json|F2=CAA (63).json|F3=SRADM (21).json|F4=FMF SmthAlch (1).json|F6=FUNSAL (76).json+FUNSAL (70).json+FUNSAL (45).json+FUNSAL (24).json+FUNSAL (54).json+FUNSAL (28).json
+F1=WBMNR (37).json|F2=CAA (20).json|F3=SRADM (62).json|F4=FMF SmthAlch (9).json|F6=FUNSAL (43).json+FUNSAL (35).json+FUNSAL (19).json+FUNSAL (47).json+FUNSAL (64).json
+F1=WBMNR (42).json|F2=CAA (10).json|F3=SRADM (16).json|F4=FMF SmthAlch (27).json|F5=N(B1w (97).json+CTTAA (3).json+CASR (18).json+CBD (33).json)
+F1=WBMNR (2).json|F2=CAA (35).json|F3=SRADM (64).json|F4=FMF SmthAlch (48).json|F5=N(B1w (81).json+CTTAA (2).json+CASR (30).json+CBD (44).json+Smithonly (7).json)
+F1=WBMNR (33).json|F2=CAA (38).json|F3=SRADM (63).json|F4=FMF SmthAlch (50).json
+F1=WBMNR (26).json|F2=CAA (32).json|F3=SRADM (51).json|F4=FMF SmthAlch (18).json
+F1=WBMNR (51).json|F2=CAA (47).json|F3=SRADM (33).json|F4=FMF SmthAlch (2).json
+F1=WBMNR (76).json|F2=CAA (68).json|F3=SRADM (8).json|F4=FMF SmthAlch (39).json|F5=N(B1w (6).json+CTTAA (11).json+CASR (17).json+CBD (11).json)+N(B1w (89).json+CTTAA (36).json+CASR (25).json+CBD (5).json)
+F1=WBMNR (66).json|F2=CAA (72).json|F3=SRADM (43).json|F4=FMF SmthAlch (52).json|F6=FUNSAL (65).json+FUNSAL (44).json+FUNSAL (40).json+FUNSAL (68).json+FUNSAL (27).json+FUNSAL (32).json+FUNSAL (81).json
+F1=WBMNR (74).json|F2=CAA (30).json|F3=SRADM (4).json|F4=FMF SmthAlch (37).json|F6=FUNSAL (80).json+FUNSAL (85).json+FUNSAL (16).json+FUNSAL (88).json+FUNSAL (8).json+FUNSAL (46).json+FUNSAL (17).json+FUNSAL (34).json+FUNSAL (3).json+FUNSAL (29).json
+F1=WBMNR (68).json|F2=CAA (31).json|F3=SRADM (31).json|F4=FMF SmthAlch (47).json|F6=FUNSAL (15).json+FUNSAL (13).json+FUNSAL (84).json+FUNSAL (39).json+FUNSAL (33).json+FUNSAL (4).json
+F1=WBMNR (39).json|F2=CAA (69).json|F3=SRADM (54).json|F4=FMF SmthAlch (16).json|F6=FUNSAL (52).json+FUNSAL (30).json+FUNSAL (57).json+FUNSAL (42).json+FUNSAL (77).json+FUNSAL (11).json
+F1=WBMNR (41).json|F2=CAA (65).json|F3=SRADM (22).json|F4=FMF SmthAlch (4).json
+F1=WBMNR (32).json|F2=CAA (56).json|F3=SRADM (45).json|F4=FMF SmthAlch (43).json|F6=FUNSAL (9).json
+F1=WBMNR (40).json|F2=CAA (11).json|F3=SRADM (65).json|F4=FMF SmthAlch (34).json|F5=N(B1w (75).json+CTTAA (29).json+CASR (1).json+CBD (30).json)+N(B1w (57).json+CTTAA (6).json+CASR (4).json+CBD (18).json+Smithonly (22).json)+N(B1w (19).json+CTTAA (30).json+CASR (5).json+CBD (20).json)|F6=FUNSAL (6).json+FUNSAL (83).json+FUNSAL (60).json+FUNSAL (79).json+FUNSAL (63).json
+F1=WBMNR (19).json|F2=CAA (53).json|F3=SRADM (20).json|F4=FMF SmthAlch (19).json|F6=FUNSAL (56).json+FUNSAL (69).json+FUNSAL (55).json+FUNSAL (61).json+FUNSAL (73).json+FUNSAL (37).json
+F1=WBMNR (13).json|F2=CAA (19).json|F3=SRADM (28).json|F4=FMF SmthAlch (22).json|F6=FUNSAL (26).json+FUNSAL (50).json+FUNSAL (7).json+FUNSAL (78).json+FUNSAL (23).json
+F1=WBMNR (79).json|F2=CAA (22).json|F3=SRADM (14).json|F4=FMF SmthAlch (31).json
+F1=WBMNR (52).json|F2=CAA (3).json|F3=SRADM (48).json|F4=FMF SmthAlch (5).json|F6=FUNSAL (10).json+FUNSAL (18).json+FUNSAL (74).json+FUNSAL (82).json
+F1=WBMNR (14).json|F2=CAA (25).json|F3=SRADM (50).json|F4=FMF SmthAlch (11).json
+F1=WBMNR (31).json|F2=CAA (58).json|F3=SRADM (44).json|F4=FMF SmthAlch (10).json
+F1=WBMNR (30).json|F2=CAA (71).json|F3=SRADM (53).json|F4=FMF SmthAlch (28).json|F5=N(B1w (84).json+CTTAA (20).json+CASR (28).json+CBD (36).json+Smithonly (16).json)+N(B1w (25).json+CTTAA (14).json+CASR (2).json+CBD (26).json)
+F1=WBMNR (78).json|F2=CAA (46).json|F3=SRADM (49).json|F4=FMF SmthAlch (33).json|F5=N(B1w (20).json+CTTAA (12).json+CASR (23).json+CBD (6).json)+N(B1w (43).json+CTTAA (4).json+CASR (26).json+CBD (41).json+Smithonly (14).json)+N(B1w (86).json+CTTAA (21).json+CASR (24).json+CBD (40).json)
+F1=WBMNR (47).json|F2=CAA (51).json|F3=SRADM (32).json|F4=FMF SmthAlch (8).json|F6=FUNSAL (58).json+FUNSAL (66).json+FUNSAL (22).json+FUNSAL (84).json
+F1=WBMNR (18).json|F2=CAA (33).json|F3=SRADM (36).json|F4=FMF SmthAlch (38).json
+F1=WBMNR (67).json|F2=CAA (43).json|F3=SRADM (37).json|F4=FMF SmthAlch (15).json|F5=N(B1w (60).json+CTTAA (16).json+CASR (16).json+CBD (43).json)+N(B1w (67).json+CTTAA (5).json+CASR (14).json+CBD (38).json)+N(B1w (42).json+CTTAA (41).json+CASR (31).json+CBD (13).json)
+F1=WBMNR (3).json|F2=CAA (8).json|F3=SRADM (57).json|F4=FMF SmthAlch (36).json
+F1=WBMNR (10).json|F2=CAA (14).json|F3=SRADM (41).json|F4=FMF SmthAlch (25).json|F5=N(B1w (62).json+CTTAA (13).json+CASR (7).json+CBD (2).json+Smithonly (2).json)+N(B1w (106).json+CTTAA (31).json+CASR (3).json+CBD (19).json)+N(B1w (29).json+CTTAA (7).json+CASR (27).json+CBD (8).json+Smithonly (13).json)
+F1=WBMNR (20).json|F2=CAA (12).json|F3=SRADM (3).json|F4=FMF SmthAlch (23).json
+F1=WBMNR (1).json|F2=CAA (18).json|F3=SRADM (42).json|F4=FMF SmthAlch (20).json|F5=N(B1w (114).json+CTTAA (39).json+CASR (8).json+CBD (39).json)+N(B1w (26).json+CTTAA (9).json+CASR (19).json+CBD (27).json)+N(B1w (33).json+CTTAA (8).json+CASR (13).json+CBD (32).json)|F6=FUNSAL (49).json+FUNSAL (74).json+FUNSAL (86).json
+F1=WBMNR (55).json|F2=CAA (5).json|F3=SRADM (35).json|F4=FMF SmthAlch (40).json|F6=FUNSAL (19).json+FUNSAL (76).json+FUNSAL (37).json+FUNSAL (56).json+FUNSAL (1).json+FUNSAL (47).json+FUNSAL (15).json+FUNSAL (27).json+FUNSAL (25).json
+F1=WBMNR (56).json|F2=CAA (26).json|F3=SRADM (60).json|F4=FMF SmthAlch (21).json
+F1=WBMNR (6).json|F2=CAA (66).json|F3=SRADM (47).json|F4=FMF SmthAlch (30).json|F5=N(B1w (113).json+CTTAA (10).json+CASR (32).json+CBD (16).json)+N(B1w (13).json+CTTAA (17).json+CASR (29).json+CBD (10).json)+N(B1w (30).json+CTTAA (1).json+CASR (20).json+CBD (37).json)
+F1=WBMNR (50).json|F2=CAA (21).json|F3=SRADM (27).json|F4=FMF SmthAlch (3).json|F6=FUNSAL (22).json+FUNSAL (42).json+FUNSAL (39).json+FUNSAL (87).json+FUNSAL (67).json+FUNSAL (38).json+FUNSAL (16).json+FUNSAL (2).json+FUNSAL (8).json
+F1=WBMNR (43).json|F2=CAA (39).json|F3=SRADM (1).json|F4=FMF SmthAlch (7).json|F5=N(B1w (50).json+CTTAA (42).json+CASR (11).json+CBD (3).json)
+F1=WBMNR (57).json|F2=CAA (36).json|F3=SRADM (67).json|F4=FMF SmthAlch (13).json
+F1=WBMNR (81).json|F2=CAA (60).json|F3=SRADM (15).json|F4=FMF SmthAlch (24).json|F6=FUNSAL (28).json+FUNSAL (40).json+FUNSAL (31).json+FUNSAL (18).json+FUNSAL (81).json+FUNSAL (23).json+FUNSAL (32).json
+F1=WBMNR (64).json|F2=CAA (2).json|F3=SRADM (25).json|F4=FMF SmthAlch (42).json
+F1=WBMNR (54).json|F2=CAA (50).json|F3=SRADM (40).json|F4=FMF SmthAlch (26).json|F5=N(B1w (8).json+CTTAA (12).json+CASR (9).json+CBD (31).json)+N(B1w (65).json+CTTAA (20).json+CASR (10).json+CBD (17).json)+N(B1w (56).json+CTTAA (1).json+CASR (33).json+CBD (15).json)
+F1=WBMNR (9).json|F2=CAA (29).json|F3=SRADM (13).json|F4=FMF SmthAlch (46).json|F5=N(B1w (111).json+CTTAA (3).json+CASR (22).json+CBD (14).json)
+F1=WBMNR (24).json|F2=CAA (55).json|F3=SRADM (12).json|F4=FMF SmthAlch (17).json
+F1=WBMNR (22).json|F2=CAA (44).json|F3=SRADM (18).json|F4=FMF SmthAlch (44).json|F5=N(B1w (28).json+CTTAA (30).json+CASR (12).json+CBD (23).json)|F6=FUNSAL (17).json+FUNSAL (13).json+FUNSAL (70).json+FUNSAL (34).json+FUNSAL (10).json+FUNSAL (33).json
+F1=WBMNR (4).json|F2=CAA (4).json|F3=SRADM (11).json|F4=FMF SmthAlch (12).json|F5=N(B1w (95).json+CTTAA (38).json+CASR (21).json+CBD (25).json)+N(B1w (39).json+CTTAA (6).json+CASR (18).json+CBD (1).json)|F6=FUNSAL (52).json+FUNSAL (89).json+FUNSAL (57).json+FUNSAL (45).json+FUNSAL (3).json
+F1=WBMNR (28).json|F2=CAA (62).json|F3=SRADM (2).json|F4=FMF SmthAlch (41).json|F6=FUNSAL (36).json+FUNSAL (59).json+FUNSAL (46).json+FUNSAL (62).json+FUNSAL (80).json+FUNSAL (5).json+FUNSAL (20).json+FUNSAL (30).json+FUNSAL (11).json+FUNSAL (75).json
+F1=WBMNR (61).json|F2=CAA (37).json|F3=SRADM (30).json|F4=FMF SmthAlch (44).json
+F1=WBMNR (58).json|F2=CAA (49).json|F3=SRADM (26).json|F4=FMF SmthAlch (31).json
+F1=WBMNR (38).json|F2=CAA (34).json|F3=SRADM (29).json|F4=FMF SmthAlch (43).json
+F1=WBMNR (46).json|F2=CAA (41).json|F3=SRADM (56).json|F4=FMF SmthAlch (27).json
+F1=WBMNR (36).json|F2=CAA (7).json|F3=SRADM (61).json|F4=FMF SmthAlch (8).json
+F1=WBMNR (7).json|F2=CAA (48).json|F3=SRADM (5).json|F4=FMF SmthAlch (15).json|F5=N(B1w (76).json+CTTAA (29).json+CASR (11).json+CBD (4).json)+N(B1w (96).json+CTTAA (4).json+CASR (31).json+CBD (35).json)
+F1=WBMNR (71).json|F2=CAA (9).json|F3=SRADM (17).json|F4=FMF SmthAlch (16).json|F6=FUNSAL (12).json+FUNSAL (41).json+FUNSAL (78).json+FUNSAL (72).json
+F1=WBMNR (59).json|F2=CAA (1).json|F3=SRADM (6).json|F4=FMF SmthAlch (33).json|F6=FUNSAL (54).json+FUNSAL (68).json+FUNSAL (69).json+FUNSAL (35).json+FUNSAL (60).json+FUNSAL (88).json
+F1=WBMNR (12).json|F2=CAA (59).json|F3=SRADM (58).json|F4=FMF SmthAlch (38).json|F6=FUNSAL (26).json+FUNSAL (61).json+FUNSAL (24).json
+F1=WBMNR (73).json|F2=CAA (13).json|F3=SRADM (24).json|F4=FMF SmthAlch (14).json
+F1=WBMNR (15).json|F2=CAA (61).json|F3=SRADM (34).json|F4=FMF SmthAlch (40).json
+F1=WBMNR (23).json|F2=CAA (15).json|F3=SRADM (9).json|F4=FMF SmthAlch (19).json
+F1=WBMNR (70).json|F2=CAA (40).json|F3=SRADM (39).json|F4=FMF SmthAlch (4).json
+F1=WBMNR (65).json|F2=CAA (17).json|F3=SRADM (66).json|F4=FMF SmthAlch (13).json
+F1=WBMNR (69).json|F2=CAA (42).json|F3=SRADM (23).json|F4=FMF SmthAlch (25).json|F5=N(B1w (22).json+CTTAA (31).json+CASR (6).json+CBD (28).json)+N(B1w (11).json+CTTAA (2).json+CASR (24).json+CBD (29).json)
+F1=WBMNR (60).json|F2=CAA (6).json|F3=SRADM (55).json|F4=FMF SmthAlch (1).json
+F1=WBMNR (80).json|F2=CAA (23).json|F3=SRADM (7).json|F4=FMF SmthAlch (23).json|F5=N(B1w (27).json+CTTAA (5).json+CASR (12).json+CBD (7).json)|F6=FUNSAL (50).json+FUNSAL (51).json+FUNSAL (9).json+FUNSAL (64).json+FUNSAL (77).json+FUNSAL (44).json
+F1=WBMNR (48).json|F2=CAA (27).json|F3=SRADM (45).json|F4=FMF SmthAlch (18).json
+F1=WBMNR (27).json|F2=CAA (57).json|F3=SRADM (32).json|F4=FMF SmthAlch (6).json
+F1=WBMNR (17).json|F2=CAA (64).json|F3=SRADM (11).json|F4=FMF SmthAlch (39).json|F6=FUNSAL (82).json+FUNSAL (7).json+FUNSAL (55).json+FUNSAL (48).json+FUNSAL (43).json+FUNSAL (83).json
+F1=WBMNR (49).json|F2=CAA (67).json|F3=SRADM (19).json|F4=FMF SmthAlch (22).json|F6=FUNSAL (29).json+FUNSAL (53).json+FUNSAL (6).json+FUNSAL (4).json+FUNSAL (85).json
+F1=WBMNR (45).json|F2=CAA (45).json|F3=SRADM (14).json|F4=FMF SmthAlch (20).json
+F1=WBMNR (34).json|F2=CAA (52).json|F3=SRADM (61).json|F4=FMF SmthAlch (7).json|F6=FUNSAL (79).json+FUNSAL (73).json+FUNSAL (21).json+FUNSAL (66).json+FUNSAL (14).json+FUNSAL (65).json+FUNSAL (71).json+FUNSAL (58).json+FUNSAL (63).json
+F1=WBMNR (25).json|F2=CAA (70).json|F3=SRADM (62).json|F4=FMF SmthAlch (28).json|F6=FUNSAL (72).json+FUNSAL (46).json+FUNSAL (58).json+FUNSAL (29).json+FUNSAL (28).json
+F1=WBMNR (8).json|F2=CAA (33).json|F3=SRADM (49).json|F4=FMF SmthAlch (30).json
+F1=WBMNR (75).json|F2=CAA (10).json|F3=SRADM (42).json|F4=FMF SmthAlch (10).json
+F1=WBMNR (21).json|F2=CAA (72).json|F3=SRADM (12).json|F4=FMF SmthAlch (53).json|F5=N(B1w (58).json+CTTAA (21).json+CASR (33).json+CBD (12).json)
+F1=WBMNR (62).json|F2=CAA (62).json|F3=SRADM (60).json|F4=FMF SmthAlch (2).json|F5=N(B1w (61).json+CTTAA (8).json+CASR (25).json+CBD (34).json)+N(B1w (79).json+CTTAA (9).json+CASR (5).json+CBD (22).json)+N(B1w (51).json+CTTAA (36).json+CASR (8).json+CBD (9).json)
+F1=WBMNR (5).json|F2=CAA (67).json|F3=SRADM (36).json|F4=FMF SmthAlch (3).json|F6=FUNSAL (39).json+FUNSAL (20).json
+F1=WBMNR (35).json|F2=CAA (32).json|F3=SRADM (43).json|F4=FMF SmthAlch (5).json|F6=FUNSAL (48).json+FUNSAL (59).json+FUNSAL (63).json+FUNSAL (74).json+FUNSAL (31).json+FUNSAL (33).json
+F1=WBMNR (44).json|F2=CAA (56).json|F3=SRADM (8).json|F4=FMF SmthAlch (26).json
+F1=WBMNR (29).json|F2=CAA (38).json|F3=SRADM (13).json|F4=FMF SmthAlch (47).json
+F1=WBMNR (63).json|F2=CAA (7).json|F3=SRADM (67).json|F4=FMF SmthAlch (12).json
+F1=WBMNR (65).json|F2=CAA (71).json|F3=SRADM (30).json|F4=FMF SmthAlch (11).json|F5=N(B1w (93).json+CTTAA (11).json+CASR (15).json+CBD (21).json+Smithonly (6).json)+N(B1w (55).json+CTTAA (10).json+CASR (23).json+CBD (20).json)|F6=FUNSAL (70).json+FUNSAL (41).json+FUNSAL (53).json+FUNSAL (80).json
+F1=WBMNR (15).json|F2=CAA (5).json|F3=SRADM (50).json|F4=FMF SmthAlch (46).json|F5=N(B1w (31).json+CTTAA (17).json+CASR (19).json+CBD (18).json)+N(B1w (77).json+CTTAA (7).json+CASR (1).json+CBD (30).json)+N(B1w (18).json+CTTAA (42).json+CASR (2).json+CBD (21).json)
+F1=WBMNR (2).json|F2=CAA (16).json|F3=SRADM (33).json|F4=FMF SmthAlch (37).json|F5=N(B1w (85).json+CTTAA (16).json+CASR (9).json+CBD (42).json)+N(B1w (9).json+CTTAA (13).json+CASR (10).json+CBD (37).json)
+F1=WBMNR (35).json|F2=CAA (48).json|F3=SRADM (44).json|F4=FMF SmthAlch (48).json|F5=N(B1w (100).json+CTTAA (41).json+CASR (3).json+CBD (14).json)+N(B1w (63).json+CTTAA (28).json+CASR (16).json+CBD (1).json)
+F1=WBMNR (10).json|F2=CAA (22).json|F3=SRADM (23).json|F4=FMF SmthAlch (17).json|F5=N(B1w (83).json+CTTAA (14).json+CASR (26).json+CBD (27).json+Smithonly (1).json)+N(B1w (2).json+CTTAA (39).json+CASR (21).json+CBD (8).json)|F6=FUNSAL (36).json+FUNSAL (7).json+FUNSAL (15).json+FUNSAL (77).json+FUNSAL (81).json
+F1=WBMNR (70).json|F2=CAA (8).json|F3=SRADM (66).json|F4=FMF SmthAlch (50).json|F5=N(B1w (15).json+CTTAA (9).json+CASR (28).json+CBD (2).json)|F6=FUNSAL (11).json+FUNSAL (4).json+FUNSAL (85).json+FUNSAL (71).json+FUNSAL (66).json+FUNSAL (75).json+FUNSAL (88).json+FUNSAL (12).json
+F1=WBMNR (34).json|F2=CAA (58).json|F3=SRADM (53).json|F4=FMF SmthAlch (52).json|F6=FUNSAL (64).json+FUNSAL (19).json+FUNSAL (26).json+FUNSAL (78).json+FUNSAL (27).json+FUNSAL (87).json
+F1=WBMNR (24).json|F2=CAA (35).json|F3=SRADM (63).json|F4=FMF SmthAlch (45).json
+F1=WBMNR (54).json|F2=CAA (6).json|F3=SRADM (26).json|F4=FMF SmthAlch (32).json|F6=FUNSAL (47).json+FUNSAL (40).json+FUNSAL (52).json+FUNSAL (5).json+FUNSAL (24).json+FUNSAL (49).json+FUNSAL (23).json
+F1=WBMNR (76).json|F2=CAA (11).json|F3=SRADM (65).json|F4=FMF SmthAlch (9).json
+F1=WBMNR (57).json|F2=CAA (50).json|F3=SRADM (2).json|F4=FMF SmthAlch (36).json|F5=N(B1w (110).json+CTTAA (12).json+CASR (17).json+CBD (7).json+Smithonly (15).json)
+F1=WBMNR (55).json|F2=CAA (42).json|F3=SRADM (54).json|F4=FMF SmthAlch (21).json|F6=FUNSAL (30).json+FUNSAL (44).json+FUNSAL (65).json+FUNSAL (18).json+FUNSAL (84).json
+F1=WBMNR (72).json|F2=CAA (12).json|F3=SRADM (27).json|F4=FMF SmthAlch (42).json|F6=FUNSAL (37).json+FUNSAL (89).json+FUNSAL (79).json+FUNSAL (57).json+FUNSAL (8).json+FUNSAL (86).json+FUNSAL (21).json+FUNSAL (51).json+FUNSAL (60).json+FUNSAL (34).json
+F1=WBMNR (79).json|F2=CAA (65).json|F3=SRADM (51).json|F4=FMF SmthAlch (24).json
+F1=WBMNR (62).json|F2=CAA (45).json|F3=SRADM (64).json|F4=FMF SmthAlch (34).json|F5=N(B1w (38).json+CTTAA (10).json+CASR (30).json+CBD (16).json)+N(B1w (37).json+CTTAA (7).json+CASR (27).json+CBD (17).json)
+F1=WBMNR (41).json|F2=CAA (13).json|F3=SRADM (22).json|F4=FMF SmthAlch (16).json
+F1=WBMNR (32).json|F2=CAA (27).json|F3=SRADM (28).json|F4=FMF SmthAlch (41).json|F5=N(B1w (45).json+CTTAA (5).json+CASR (22).json+CBD (32).json)
+F1=WBMNR (42).json|F2=CAA (44).json|F3=SRADM (5).json|F4=FMF SmthAlch (34).json
+F1=WBMNR (14).json|F2=CAA (14).json|F3=SRADM (58).json|F4=FMF SmthAlch (1).json|F5=N(B1w (69).json+CTTAA (6).json+CASR (4).json+CBD (41).json)
+F1=WBMNR (48).json|F2=CAA (59).json|F3=SRADM (29).json|F4=FMF SmthAlch (33).json|F5=N(B1w (74).json+CTTAA (29).json+CASR (29).json+CBD (36).json+Smithonly (20).json)
+F1=WBMNR (49).json|F2=CAA (41).json|F3=SRADM (7).json|F4=FMF SmthAlch (40).json
+F1=WBMNR (47).json|F2=CAA (66).json|F3=SRADM (35).json|F4=FMF SmthAlch (52).json|F6=FUNSAL (1).json+FUNSAL (43).json+FUNSAL (22).json+FUNSAL (83).json+FUNSAL (67).json+FUNSAL (45).json+FUNSAL (38).json+FUNSAL (68).json+FUNSAL (9).json
+F1=WBMNR (67).json|F2=CAA (28).json|F3=SRADM (9).json|F4=FMF SmthAlch (31).json|F5=N(B1w (7).json+CTTAA (14).json+CASR (20).json+CBD (35).json)
+F1=WBMNR (16).json|F2=CAA (68).json|F3=SRADM (48).json|F4=FMF SmthAlch (32).json
+F1=WBMNR (43).json|F2=CAA (31).json|F3=SRADM (10).json|F4=FMF SmthAlch (21).json|F6=FUNSAL (14).json+FUNSAL (55).json+FUNSAL (54).json+FUNSAL (50).json+FUNSAL (13).json+FUNSAL (25).json+FUNSAL (62).json+FUNSAL (17).json+FUNSAL (16).json+FUNSAL (35).json
+F1=WBMNR (5).json|F2=CAA (18).json|F3=SRADM (25).json|F4=FMF SmthAlch (48).json|F6=FUNSAL (2).json
+F1=WBMNR (20).json|F2=CAA (26).json|F3=SRADM (15).json|F4=FMF SmthAlch (38).json|F5=N(B1w (101).json+CTTAA (21).json+CASR (13).json+CBD (4).json)+N(B1w (24).json+CTTAA (8).json+CASR (14).json+CBD (38).json+Smithonly (12).json)+N(B1w (34).json+CTTAA (4).json+CASR (32).json+CBD (43).json)
+F1=WBMNR (38).json|F2=CAA (43).json|F3=SRADM (57).json|F4=FMF SmthAlch (37).json
+F1=WBMNR (6).json|F2=CAA (20).json|F3=SRADM (55).json|F4=FMF SmthAlch (15).json|F5=N(B1w (49).json+CTTAA (38).json+CASR (7).json+CBD (13).json)+N(B1w (23).json+CTTAA (2).json+CASR (9).json+CBD (12).json+Smithonly (4).json)+N(B1w (46).json+CTTAA (41).json+CASR (19).json+CBD (6).json)
+F1=WBMNR (74).json|F2=CAA (30).json|F3=SRADM (21).json|F4=FMF SmthAlch (28).json|F6=FUNSAL (82).json+FUNSAL (69).json+FUNSAL (61).json+FUNSAL (42).json+FUNSAL (10).json+FUNSAL (6).json+FUNSAL (73).json+FUNSAL (3).json+FUNSAL (76).json
+F1=WBMNR (8).json|F2=CAA (2).json|F3=SRADM (18).json|F4=FMF SmthAlch (14).json|F5=N(B1w (54).json+CTTAA (28).json+CASR (17).json+CBD (31).json)+N(B1w (14).json+CTTAA (36).json+CASR (32).json+CBD (22).json)+N(B1w (78).json+CTTAA (17).json+CASR (1).json+CBD (10).json)
+F1=WBMNR (25).json|F2=CAA (15).json|F3=SRADM (3).json|F4=FMF SmthAlch (47).json|F6=FUNSAL (32).json
+F1=WBMNR (1).json|F2=CAA (51).json|F3=SRADM (47).json|F4=FMF SmthAlch (44).json|F5=N(B1w (40).json+CTTAA (3).json+CASR (3).json+CBD (33).json+Smithonly (3).json)|F6=FUNSAL (56).json+FUNSAL (10).json+FUNSAL (69).json+FUNSAL (83).json+FUNSAL (89).json+FUNSAL (85).json
+F1=WBMNR (80).json|F2=CAA (46).json|F3=SRADM (37).json|F4=FMF SmthAlch (5).json|F6=FUNSAL (18).json+FUNSAL (34).json+FUNSAL (51).json+FUNSAL (24).json+FUNSAL (75).json+FUNSAL (43).json+FUNSAL (73).json+FUNSAL (37).json
+F1=WBMNR (66).json|F2=CAA (55).json|F3=SRADM (17).json|F4=FMF SmthAlch (17).json|F5=N(B1w (102).json+CTTAA (31).json+CASR (18).json+CBD (19).json)+N(B1w (107).json+CTTAA (20).json+CASR (21).json+CBD (26).json)|F6=FUNSAL (66).json
+F1=WBMNR (71).json|F2=CAA (54).json|F3=SRADM (24).json|F4=FMF SmthAlch (4).json|F6=FUNSAL (40).json+FUNSAL (56).json+FUNSAL (28).json+FUNSAL (61).json+FUNSAL (80).json+FUNSAL (21).json+FUNSAL (26).json
+F1=WBMNR (22).json|F2=CAA (49).json|F3=SRADM (59).json|F4=FMF SmthAlch (19).json|F6=FUNSAL (68).json+FUNSAL (17).json+FUNSAL (11).json+FUNSAL (20).json+FUNSAL (29).json+FUNSAL (55).json+FUNSAL (3).json+FUNSAL (50).json+FUNSAL (42).json+FUNSAL (77).json
+F1=WBMNR (4).json|F2=CAA (60).json|F3=SRADM (6).json|F4=FMF SmthAlch (50).json|F5=N(B1w (21).json+CTTAA (30).json+CASR (14).json+CBD (24).json+Smithonly (21).json)+N(B1w (16).json+CTTAA (42).json+CASR (15).json+CBD (34).json)
+F1=WBMNR (60).json|F2=CAA (63).json|F3=SRADM (46).json|F4=FMF SmthAlch (39).json
+F1=WBMNR (37).json|F2=CAA (64).json|F3=SRADM (4).json|F4=FMF SmthAlch (45).json
+F1=WBMNR (68).json|F2=CAA (39).json|F3=SRADM (16).json|F4=FMF SmthAlch (2).json|F6=FUNSAL (60).json+FUNSAL (67).json+FUNSAL (46).json+FUNSAL (7).json+FUNSAL (5).json+FUNSAL (53).json+FUNSAL (13).json+FUNSAL (31).json+FUNSAL (70).json+FUNSAL (41).json
+F1=WBMNR (75).json|F2=CAA (61).json|F3=SRADM (1).json|F4=FMF SmthAlch (26).json
+F1=WBMNR (58).json|F2=CAA (25).json|F3=SRADM (41).json|F4=FMF SmthAlch (8).json|F6=FUNSAL (48).json+FUNSAL (58).json+FUNSAL (78).json+FUNSAL (12).json
+F1=WBMNR (3).json|F2=CAA (34).json|F3=SRADM (38).json|F4=FMF SmthAlch (25).json|F5=N(B1w (36).json+CTTAA (16).json+CASR (28).json+CBD (44).json+Smithonly (18).json)+N(B1w (59).json+CTTAA (13).json+CASR (27).json+CBD (29).json)
+F1=WBMNR (27).json|F2=CAA (3).json|F3=SRADM (56).json|F4=FMF SmthAlch (36).json|F6=FUNSAL (38).json+FUNSAL (19).json+FUNSAL (22).json+FUNSAL (27).json+FUNSAL (36).json+FUNSAL (2).json+FUNSAL (84).json+FUNSAL (49).json
+F1=WBMNR (64).json|F2=CAA (69).json|F3=SRADM (39).json|F4=FMF SmthAlch (7).json
+F1=WBMNR (30).json|F2=CAA (21).json|F3=SRADM (34).json|F4=FMF SmthAlch (3).json
+F1=WBMNR (56).json|F2=CAA (23).json|F3=SRADM (20).json|F4=FMF SmthAlch (13).json|F6=FUNSAL (59).json+FUNSAL (71).json+FUNSAL (39).json+FUNSAL (16).json+FUNSAL (9).json
+F1=WBMNR (51).json|F2=CAA (53).json|F3=SRADM (40).json|F4=FMF SmthAlch (24).json
+F1=WBMNR (31).json|F2=CAA (57).json|F3=SRADM (52).json|F4=FMF SmthAlch (12).json
+F1=WBMNR (13).json|F2=CAA (36).json|F3=SRADM (31).json|F4=FMF SmthAlch (42).json|F5=N(B1w (4).json+CTTAA (1).json+CASR (2).json+CBD (5).json)+N(B1w (1).json+CTTAA (39).json+CASR (24).json+CBD (15).json)+N(B1w (80).json+CTTAA (11).json+CASR (25).json+CBD (25).json+Smithonly (9).json)|F6=FUNSAL (82).json+FUNSAL (64).json+FUNSAL (81).json+FUNSAL (4).json+FUNSAL (72).json+FUNSAL (63).json+FUNSAL (86).json+FUNSAL (15).json
+F1=WBMNR (59).json|F2=CAA (9).json|F3=SRADM (4).json|F4=FMF SmthAlch (43).json|F6=FUNSAL (14).json+FUNSAL (25).json+FUNSAL (74).json+FUNSAL (76).json+FUNSAL (8).json+FUNSAL (45).json+FUNSAL (87).json+FUNSAL (32).json+FUNSAL (88).json
+F1=WBMNR (45).json|F2=CAA (40).json|F3=SRADM (49).json|F4=FMF SmthAlch (30).json|F6=FUNSAL (6).json+FUNSAL (33).json+FUNSAL (65).json+FUNSAL (30).json+FUNSAL (62).json+FUNSAL (44).json+FUNSAL (57).json+FUNSAL (1).json+FUNSAL (35).json+FUNSAL (79).json
+F1=WBMNR (33).json|F2=CAA (19).json|F3=SRADM (22).json|F4=FMF SmthAlch (46).json|F6=FUNSAL (47).json+FUNSAL (23).json+FUNSAL (54).json+FUNSAL (52).json+FUNSAL (72).json+FUNSAL (24).json+FUNSAL (15).json+FUNSAL (41).json+FUNSAL (50).json
+F1=WBMNR (77).json|F2=CAA (29).json|F3=SRADM (17).json|F4=FMF SmthAlch (23).json|F5=N(B1w (104).json+CTTAA (10).json+CASR (29).json+CBD (9).json+Smithonly (10).json)+N(B1w (92).json+CTTAA (12).json+CASR (26).json+CBD (40).json)+N(B1w (5).json+CTTAA (20).json+CASR (7).json+CBD (39).json+Smithonly (17).json)
+F1=WBMNR (26).json|F2=CAA (47).json|F3=SRADM (13).json|F4=FMF SmthAlch (18).json|F5=N(B1w (66).json+CTTAA (7).json+CASR (23).json+CBD (11).json)+N(B1w (109).json+CTTAA (21).json+CASR (33).json+CBD (3).json)+N(B1w (52).json+CTTAA (30).json+CASR (10).json+CBD (23).json)|F6=FUNSAL (49).json+FUNSAL (39).json+FUNSAL (23).json+FUNSAL (46).json+FUNSAL (27).json+FUNSAL (55).json+FUNSAL (31).json+FUNSAL (42).json+FUNSAL (76).json+FUNSAL (9).json
+F1=WBMNR (50).json|F2=CAA (37).json|F3=SRADM (5).json|F4=FMF SmthAlch (53).json
+F1=WBMNR (81).json|F2=CAA (24).json|F3=SRADM (9).json|F4=FMF SmthAlch (20).json|F6=FUNSAL (47).json+FUNSAL (11).json+FUNSAL (21).json+FUNSAL (19).json+FUNSAL (16).json+FUNSAL (45).json+FUNSAL (68).json+FUNSAL (22).json+FUNSAL (33).json+FUNSAL (79).json
+F1=WBMNR (11).json|F2=CAA (17).json|F3=SRADM (6).json|F4=FMF SmthAlch (22).json|F5=N(B1w (90).json+CTTAA (5).json+CASR (31).json+CBD (28).json)
+F1=WBMNR (12).json|F2=CAA (1).json|F3=SRADM (3).json|F4=FMF SmthAlch (6).json
+F1=WBMNR (39).json|F2=CAA (4).json|F3=SRADM (31).json|F4=FMF SmthAlch (11).json|F6=FUNSAL (77).json+FUNSAL (87).json+FUNSAL (62).json+FUNSAL (44).json+FUNSAL (29).json
+F1=WBMNR (53).json|F2=CAA (70).json|F3=SRADM (35).json|F4=FMF SmthAlch (10).json|F6=FUNSAL (30).json+FUNSAL (82).json+FUNSAL (88).json+FUNSAL (53).json+FUNSAL (1).json+FUNSAL (66).json+FUNSAL (12).json+FUNSAL (74).json
+F1=WBMNR (18).json|F2=CAA (55).json|F3=SRADM (26).json|F4=FMF SmthAlch (27).json|F5=N(B1w (32).json+CTTAA (31).json+CASR (20).json+CBD (32).json+Smithonly (11).json)+N(B1w (64).json+CTTAA (8).json+CASR (4).json+CBD (3).json)
+F1=WBMNR (21).json|F2=CAA (13).json|F3=SRADM (11).json|F4=FMF SmthAlch (9).json|F5=N(B1w (103).json+CTTAA (4).json+CASR (8).json+CBD (43).json+Smithonly (23).json)+N(B1w (48).json+CTTAA (1).json+CASR (11).json+CBD (5).json+Smithonly (19).json)
+F1=WBMNR (7).json|F2=CAA (54).json|F3=SRADM (52).json|F4=FMF SmthAlch (36).json|F6=FUNSAL (81).json+FUNSAL (58).json+FUNSAL (3).json+FUNSAL (25).json+FUNSAL (36).json+FUNSAL (60).json+FUNSAL (70).json+FUNSAL (43).json
+F1=WBMNR (46).json|F2=CAA (66).json|F3=SRADM (25).json|F4=FMF SmthAlch (52).json|F6=FUNSAL (14).json+FUNSAL (8).json+FUNSAL (57).json+FUNSAL (59).json
+F1=WBMNR (52).json|F2=CAA (47).json|F3=SRADM (62).json|F4=FMF SmthAlch (16).json
+F1=WBMNR (69).json|F2=CAA (6).json|F3=SRADM (57).json|F4=FMF SmthAlch (21).json|F5=N(B1w (41).json+CTTAA (3).json+CASR (13).json+CBD (37).json)+N(B1w (47).json+CTTAA (2).json+CASR (30).json+CBD (36).json)+N(B1w (68).json+CTTAA (13).json+CASR (6).json+CBD (39).json)|F6=FUNSAL (63).json+FUNSAL (75).json+FUNSAL (69).json+FUNSAL (4).json+FUNSAL (10).json+FUNSAL (56).json+FUNSAL (18).json+FUNSAL (80).json+FUNSAL (28).json+FUNSAL (32).json
+F1=WBMNR (28).json|F2=CAA (43).json|F3=SRADM (66).json|F4=FMF SmthAlch (10).json|F5=N(B1w (44).json+CTTAA (36).json+CASR (12).json+CBD (24).json+Smithonly (13).json)+N(B1w (35).json+CTTAA (11).json+CASR (16).json+CBD (12).json)
+F1=WBMNR (44).json|F2=CAA (9).json|F3=SRADM (64).json|F4=FMF SmthAlch (45).json|F5=N(B1w (98).json+CTTAA (28).json+CASR (22).json+CBD (41).json+Smithonly (9).json)|F6=FUNSAL (6).json+FUNSAL (7).json+FUNSAL (89).json+FUNSAL (26).json+FUNSAL (86).json
+F1=WBMNR (17).json|F2=CAA (25).json|F3=SRADM (55).json|F4=FMF SmthAlch (17).json|F5=N(B1w (94).json+CTTAA (16).json+CASR (5).json+CBD (14).json)+N(B1w (53).json+CTTAA (41).json+CASR (23).json+CBD (4).json+Smithonly (11).json)
+F1=WBMNR (36).json|F2=CAA (36).json|F3=SRADM (12).json|F4=FMF SmthAlch (27).json
+F1=WBMNR (19).json|F2=CAA (45).json|F3=SRADM (33).json|F4=FMF SmthAlch (20).json|F5=N(B1w (12).json+CTTAA (17).json+CASR (2).json+CBD (20).json+Smithonly (17).json)
+F1=WBMNR (9).json|F2=CAA (53).json|F3=SRADM (23).json|F4=FMF SmthAlch (5).json|F6=FUNSAL (51).json+FUNSAL (40).json+FUNSAL (13).json+FUNSAL (2).json+FUNSAL (61).json+FUNSAL (37).json
+F1=WBMNR (23).json|F2=CAA (40).json|F3=SRADM (39).json|F4=FMF SmthAlch (8).json|F6=FUNSAL (78).json+FUNSAL (52).json
+F1=WBMNR (40).json|F2=CAA (50).json|F3=SRADM (29).json|F4=FMF SmthAlch (19).json
+F1=WBMNR (78).json|F2=CAA (30).json|F3=SRADM (46).json|F4=FMF SmthAlch (4).json
+F1=WBMNR (61).json|F2=CAA (5).json|F3=SRADM (21).json|F4=FMF SmthAlch (37).json|F5=N(B1w (70).json+CTTAA (9).json+CASR (25).json+CBD (21).json)|F6=FUNSAL (35).json+FUNSAL (67).json
+F1=WBMNR (73).json|F2=CAA (20).json|F3=SRADM (7).json|F4=FMF SmthAlch (30).json|F6=FUNSAL (54).json+FUNSAL (83).json+FUNSAL (34).json+FUNSAL (73).json+FUNSAL (71).json+FUNSAL (17).json
+F1=WBMNR (12).json|F2=CAA (57).json|F3=SRADM (15).json|F4=FMF SmthAlch (18).json|F6=FUNSAL (20).json+FUNSAL (65).json+FUNSAL (48).json+FUNSAL (38).json
+F1=WBMNR (71).json|F2=CAA (42).json|F3=SRADM (2).json|F4=FMF SmthAlch (43).json
+F1=WBMNR (45).json|F2=CAA (51).json|F3=SRADM (41).json|F4=FMF SmthAlch (25).json|F6=FUNSAL (64).json+FUNSAL (85).json+FUNSAL (84).json+FUNSAL (5).json+FUNSAL (35).json+FUNSAL (85).json+FUNSAL (72).json
+F1=WBMNR (62).json|F2=CAA (10).json|F3=SRADM (32).json|F4=FMF SmthAlch (44).json|F5=N(B1w (82).json+CTTAA (42).json+CASR (11).json+CBD (18).json)
+F1=WBMNR (60).json|F2=CAA (11).json|F3=SRADM (36).json|F4=FMF SmthAlch (50).json|F5=N(B1w (112).json+CTTAA (39).json+CASR (18).json+CBD (1).json+Smithonly (4).json)+N(B1w (17).json+CTTAA (14).json+CASR (8).json+CBD (29).json+Smithonly (2).json)|F6=FUNSAL (21).json+FUNSAL (71).json+FUNSAL (17).json+FUNSAL (54).json+FUNSAL (8).json+FUNSAL (44).json+FUNSAL (41).json+FUNSAL (34).json+FUNSAL (82).json+FUNSAL (76).json
+F1=WBMNR (57).json|F2=CAA (7).json|F3=SRADM (44).json|F4=FMF SmthAlch (2).json|F5=N(B1w (71).json+CTTAA (38).json+CASR (10).json+CBD (8).json)+N(B1w (108).json+CTTAA (29).json+CASR (5).json+CBD (23).json)+N(B1w (72).json+CTTAA (6).json+CASR (19).json+CBD (38).json+Smithonly (6).json)
+F1=WBMNR (42).json|F2=CAA (62).json|F3=SRADM (24).json|F4=FMF SmthAlch (9).json|F6=FUNSAL (39).json+FUNSAL (10).json+FUNSAL (38).json
+F1=WBMNR (19).json|F2=CAA (72).json|F3=SRADM (20).json|F4=FMF SmthAlch (12).json|F6=FUNSAL (20).json+FUNSAL (48).json+FUNSAL (62).json+FUNSAL (22).json+FUNSAL (49).json+FUNSAL (16).json
+F1=WBMNR (38).json|F2=CAA (44).json|F3=SRADM (63).json|F4=FMF SmthAlch (42).json|F6=FUNSAL (6).json+FUNSAL (32).json
+F1=WBMNR (74).json|F2=CAA (37).json|F3=SRADM (45).json|F4=FMF SmthAlch (33).json|F5=N(B1w (99).json+CTTAA (9).json+CASR (4).json+CBD (9).json)+N(B1w (87).json+CTTAA (13).json+CASR (29).json+CBD (28).json+Smithonly (7).json)|F6=FUNSAL (46).json+FUNSAL (60).json+FUNSAL (86).json+FUNSAL (36).json+FUNSAL (58).json+FUNSAL (13).json+FUNSAL (4).json+FUNSAL (53).json+FUNSAL (69).json
+F1=WBMNR (4).json|F2=CAA (33).json|F3=SRADM (37).json|F4=FMF SmthAlch (11).json
+F1=WBMNR (79).json|F2=CAA (46).json|F3=SRADM (16).json|F4=FMF SmthAlch (1).json|F6=FUNSAL (64).json+FUNSAL (51).json
+F1=WBMNR (9).json|F2=CAA (58).json|F3=SRADM (1).json|F4=FMF SmthAlch (40).json|F5=N(B1w (3).json+CTTAA (3).json+CASR (26).json+CBD (40).json)+N(B1w (88).json+CTTAA (28).json+CASR (24).json+CBD (35).json)+N(B1w (73).json+CTTAA (8).json+CASR (28).json+CBD (42).json)
+F1=WBMNR (7).json|F2=CAA (8).json|F3=SRADM (65).json|F4=FMF SmthAlch (48).json|F6=FUNSAL (57).json+FUNSAL (7).json+FUNSAL (55).json+FUNSAL (47).json
+F1=WBMNR (69).json|F2=CAA (59).json|F3=SRADM (48).json|F4=FMF SmthAlch (14).json|F5=N(B1w (91).json+CTTAA (39).json+CASR (30).json+CBD (30).json)
+F1=WBMNR (20).json|F2=CAA (56).json|F3=SRADM (58).json|F4=FMF SmthAlch (24).json
+F1=WBMNR (61).json|F2=CAA (68).json|F3=SRADM (8).json|F4=FMF SmthAlch (47).json
+F1=WBMNR (16).json|F2=CAA (41).json|F3=SRADM (34).json|F4=FMF SmthAlch (32).json
+F1=WBMNR (78).json|F2=CAA (65).json|F3=SRADM (59).json|F4=FMF SmthAlch (28).json
+F1=WBMNR (73).json|F2=CAA (48).json|F3=SRADM (54).json|F4=FMF SmthAlch (22).json
+F1=WBMNR (52).json|F2=CAA (71).json|F3=SRADM (61).json|F4=FMF SmthAlch (3).json|F5=N(B1w (34).json+CTTAA (2).json+CASR (22).json+CBD (22).json+Smithonly (10).json)|F6=FUNSAL (33).json+FUNSAL (84).json+FUNSAL (56).json+FUNSAL (59).json
+F1=WBMNR (36).json|F2=CAA (17).json|F3=SRADM (28).json|F4=FMF SmthAlch (39).json
+F1=WBMNR (21).json|F2=CAA (26).json|F3=SRADM (47).json|F4=FMF SmthAlch (7).json
+F1=WBMNR (76).json|F2=CAA (22).json|F3=SRADM (30).json|F4=FMF SmthAlch (53).json|F6=FUNSAL (43).json+FUNSAL (63).json+FUNSAL (1).json+FUNSAL (80).json+FUNSAL (24).json+FUNSAL (29).json+FUNSAL (67).json+FUNSAL (66).json+FUNSAL (40).json
+F1=WBMNR (8).json|F2=CAA (67).json|F3=SRADM (10).json|F4=FMF SmthAlch (31).json|F5=N(B1w (14).json+CTTAA (42).json+CASR (1).json+CBD (11).json)+N(B1w (12).json+CTTAA (10).json+CASR (14).json+CBD (34).json)
+F1=WBMNR (27).json|F2=CAA (31).json|F3=SRADM (67).json|F4=FMF SmthAlch (34).json|F5=N(B1w (93).json+CTTAA (31).json+CASR (13).json+CBD (6).json)+N(B1w (74).json+CTTAA (12).json+CASR (12).json+CBD (27).json)
+F1=WBMNR (3).json|F2=CAA (18).json|F3=SRADM (42).json|F4=FMF SmthAlch (46).json
+F1=WBMNR (49).json|F2=CAA (63).json|F3=SRADM (51).json|F4=FMF SmthAlch (41).json|F6=FUNSAL (3).json
+F1=WBMNR (80).json|F2=CAA (24).json|F3=SRADM (56).json|F4=FMF SmthAlch (23).json
+F1=WBMNR (64).json|F2=CAA (1).json|F3=SRADM (14).json|F4=FMF SmthAlch (13).json
+F1=WBMNR (56).json|F2=CAA (14).json|F3=SRADM (38).json|F4=FMF SmthAlch (38).json
+F1=WBMNR (17).json|F2=CAA (32).json|F3=SRADM (50).json|F4=FMF SmthAlch (6).json|F5=N(B1w (105).json+CTTAA (16).json+CASR (15).json+CBD (17).json+Smithonly (15).json)
+F1=WBMNR (68).json|F2=CAA (4).json|F3=SRADM (27).json|F4=FMF SmthAlch (26).json|F6=FUNSAL (83).json
+F1=WBMNR (58).json|F2=CAA (27).json|F3=SRADM (53).json|F4=FMF SmthAlch (15).json|F5=N(B1w (55).json+CTTAA (5).json+CASR (9).json+CBD (33).json)+N(B1w (29).json+CTTAA (21).json+CASR (27).json+CBD (25).json)+N(B1w (106).json+CTTAA (7).json+CASR (17).json+CBD (2).json)|F6=FUNSAL (28).json+FUNSAL (78).json+FUNSAL (79).json+FUNSAL (70).json+FUNSAL (50).json
+F1=WBMNR (28).json|F2=CAA (69).json|F3=SRADM (43).json|F4=FMF SmthAlch (34).json
+F1=WBMNR (40).json|F2=CAA (60).json|F3=SRADM (18).json|F4=FMF SmthAlch (15).json|F6=FUNSAL (37).json+FUNSAL (31).json+FUNSAL (27).json+FUNSAL (68).json+FUNSAL (61).json+FUNSAL (5).json+FUNSAL (75).json+FUNSAL (23).json+FUNSAL (30).json+FUNSAL (45).json
+F1=WBMNR (54).json|F2=CAA (35).json|F3=SRADM (40).json|F4=FMF SmthAlch (50).json|F5=N(B1w (108).json+CTTAA (4).json+CASR (21).json+CBD (15).json+Smithonly (21).json)+N(B1w (75).json+CTTAA (6).json+CASR (31).json+CBD (26).json)|F6=FUNSAL (19).json+FUNSAL (65).json+FUNSAL (18).json+FUNSAL (2).json+FUNSAL (25).json
+F1=WBMNR (41).json|F2=CAA (38).json|F3=SRADM (60).json|F4=FMF SmthAlch (39).json
+F1=WBMNR (31).json|F2=CAA (61).json|F3=SRADM (19).json|F4=FMF SmthAlch (52).json|F6=FUNSAL (42).json+FUNSAL (73).json+FUNSAL (14).json+FUNSAL (26).json+FUNSAL (88).json+FUNSAL (77).json+FUNSAL (81).json+FUNSAL (74).json+FUNSAL (52).json
+F1=WBMNR (32).json|F2=CAA (12).json|F3=SRADM (55).json|F4=FMF SmthAlch (11).json
+F1=WBMNR (30).json|F2=CAA (2).json|F3=SRADM (23).json|F4=FMF SmthAlch (2).json|F5=N(B1w (110).json+CTTAA (1).json+CASR (33).json+CBD (7).json)
+F1=WBMNR (29).json|F2=CAA (64).json|F3=SRADM (51).json|F4=FMF SmthAlch (41).json
+F1=WBMNR (75).json|F2=CAA (15).json|F3=SRADM (42).json|F4=FMF SmthAlch (53).json
+F1=WBMNR (25).json|F2=CAA (23).json|F3=SRADM (28).json|F4=FMF SmthAlch (4).json|F5=N(B1w (48).json+CTTAA (20).json+CASR (32).json+CBD (16).json)+N(B1w (46).json+CTTAA (36).json+CASR (6).json+CBD (19).json)+N(B1w (62).json+CTTAA (41).json+CASR (7).json+CBD (10).json+Smithonly (23).json)|F6=FUNSAL (89).json+FUNSAL (15).json+FUNSAL (87).json+FUNSAL (9).json+FUNSAL (12).json+FUNSAL (11).json+FUNSAL (78).json+FUNSAL (71).json
+F1=WBMNR (26).json|F2=CAA (21).json|F3=SRADM (13).json|F4=FMF SmthAlch (37).json|F6=FUNSAL (85).json+FUNSAL (2).json
+F1=WBMNR (2).json|F2=CAA (52).json|F3=SRADM (29).json|F4=FMF SmthAlch (7).json
+F1=WBMNR (37).json|F2=CAA (16).json|F3=SRADM (14).json|F4=FMF SmthAlch (32).json|F5=N(B1w (39).json+CTTAA (14).json+CASR (16).json+CBD (13).json)|F6=FUNSAL (40).json+FUNSAL (18).json+FUNSAL (22).json+FUNSAL (25).json
+F1=WBMNR (14).json|F2=CAA (29).json|F3=SRADM (4).json|F4=FMF SmthAlch (43).json|F6=FUNSAL (13).json+FUNSAL (28).json
+F1=WBMNR (23).json|F2=CAA (3).json|F3=SRADM (17).json|F4=FMF SmthAlch (40).json|F6=FUNSAL (19).json+FUNSAL (12).json+FUNSAL (36).json
+F1=WBMNR (15).json|F2=CAA (39).json|F3=SRADM (11).json|F4=FMF SmthAlch (47).json|F5=N(B1w (85).json+CTTAA (29).json+CASR (20).json+CBD (44).json)+N(B1w (73).json+CTTAA (11).json+CASR (3).json+CBD (31).json)
+F1=WBMNR (48).json|F2=CAA (28).json|F3=SRADM (31).json|F4=FMF SmthAlch (42).json|F6=FUNSAL (89).json+FUNSAL (20).json+FUNSAL (80).json+FUNSAL (86).json+FUNSAL (7).json+FUNSAL (1).json+FUNSAL (84).json+FUNSAL (48).json+FUNSAL (57).json
+F1=WBMNR (44).json|F2=CAA (49).json|F3=SRADM (67).json|F4=FMF SmthAlch (19).json
+F1=WBMNR (70).json|F2=CAA (34).json|F3=SRADM (43).json|F4=FMF SmthAlch (20).json
+F1=WBMNR (34).json|F2=CAA (19).json|F3=SRADM (60).json|F4=FMF SmthAlch (48).json
+F1=WBMNR (59).json|F2=CAA (11).json|F3=SRADM (61).json|F4=FMF SmthAlch (23).json
+F1=WBMNR (47).json|F2=CAA (57).json|F3=SRADM (53).json|F4=FMF SmthAlch (1).json
+F1=WBMNR (63).json|F2=CAA (13).json|F3=SRADM (49).json|F4=FMF SmthAlch (3).json
+F1=WBMNR (13).json|F2=CAA (53).json|F3=SRADM (54).json|F4=FMF SmthAlch (38).json
+F1=WBMNR (51).json|F2=CAA (72).json|F3=SRADM (50).json|F4=FMF SmthAlch (44).json
+
