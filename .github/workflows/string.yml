@@ -24,7 +24,7 @@ on:
           - 'Fishing click+time sensitive - Copy'
           - 'Fishing experimental- click+time sensitive'
           - 'FM straight spot- TIME SENSITIVE'
-          - 'FM+COOK straight spot'
+          - 'FM+COOK straight spot - TIME SENSITIVE'
           - 'TEST'
       folder_2:
         description: 'Folder 2'
