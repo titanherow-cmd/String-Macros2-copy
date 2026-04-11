@@ -1,14 +1,15 @@
-name: String macros (v3.18.86 - 7z compression + subfolder filtering)
+name: String macros (v3.18.87 - 7z compression + subfolder filtering)
 
 on:
   workflow_dispatch:
     inputs:
       folder_1:
-        description: 'Folder 1 (required if using specific folders)'
+        description: 'Folder 1  |  ALL FOLDERS = run everything'
         required: false
-        default: '-- none --'
+        default: '22- Craft Dia- edge- lamp bank Z- S'
         type: choice
         options:
+          - 'ALL FOLDERS'
           - '-- none --'
           - '18- WC- draynor willow- inzoom- S slightly SE'
           - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
@@ -31,6 +32,7 @@ on:
         default: '-- none --'
         type: choice
         options:
+          - 'ALL FOLDERS'
           - '-- none --'
           - '18- WC- draynor willow- inzoom- S slightly SE'
           - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
@@ -53,6 +55,7 @@ on:
         default: '-- none --'
         type: choice
         options:
+          - 'ALL FOLDERS'
           - '-- none --'
           - '18- WC- draynor willow- inzoom- S slightly SE'
           - '20- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
@@ -74,15 +77,10 @@ on:
         required: false
         default: false
         type: boolean
-      use_specific_folders:
-        description: 'Use specific folders only (filter mode)'
-        required: false
-        default: true
-        type: boolean
       versions:
         description: 'Total versions to generate *'
         required: true
-        default: '12'
+        default: '22'
       target_minutes:
         description: 'Target duration per stringed file *'
         required: true
@@ -96,17 +94,17 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
+
       - name: Get current BUNDLE_SEQ
         id: seq
         run: |
@@ -116,50 +114,60 @@ jobs:
             VAL=1
           fi
           echo "BUNDLE_SEQ=$VAL" >> "$GITHUB_ENV"
-      
-      - name: Process specific folders input
+
+      - name: Process folder selections
         id: process_folders
         run: |
           SAVED_FILE=".github/specific_folders_to_include.txt"
+          F1="${{ github.event.inputs.folder_1 }}"
+          F2="${{ github.event.inputs.folder_2 }}"
+          F3="${{ github.event.inputs.folder_3 }}"
 
-          # Collect all non-none dropdown selections into an array
-          SELECTED_FOLDERS=()
-          for SLOT in \
-            "${{ github.event.inputs.folder_1 }}" \
-            "${{ github.event.inputs.folder_2 }}" \
-            "${{ github.event.inputs.folder_3 }}" \
-            "${{ github.event.inputs.folder_4 }}" \
-            "${{ github.event.inputs.folder_5 }}"; do
-            if [ "$SLOT" != "-- none --" ] && [ -n "$SLOT" ]; then
-              SELECTED_FOLDERS+=("$SLOT")
-            fi
-          done
-
-          if [ ${#SELECTED_FOLDERS[@]} -gt 0 ]; then
-            # One or more folders chosen — save them (one per line)
-            mkdir -p .github
-            printf '%s\n' "${SELECTED_FOLDERS[@]}" > "$SAVED_FILE"
-            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=dropdown (${#SELECTED_FOLDERS[@]} folder(s) selected)" >> "$GITHUB_ENV"
-            echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
-            echo "Saved ${#SELECTED_FOLDERS[@]} folder(s) to $SAVED_FILE:"
-            printf '  - %s\n' "${SELECTED_FOLDERS[@]}"
-          elif [ -f "$SAVED_FILE" ]; then
-            # No dropdown selection — use existing saved file
-            echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
+          # If ANY dropdown is set to ALL FOLDERS → run everything, clear saved file
+          if [ "$F1" = "ALL FOLDERS" ] || [ "$F2" = "ALL FOLDERS" ] || [ "$F3" = "ALL FOLDERS" ]; then
+            rm -f "$SAVED_FILE"
+            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
+            echo "USE_SPECIFIC=false" >> "$GITHUB_ENV"
+            echo "FOLDERS_SOURCE=ALL FOLDERS selected — processing entire input_macros" >> "$GITHUB_ENV"
             echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
           else
-            # Nothing selected, no saved file — process ALL folders
-            echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
-            echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
-            echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+            # Collect specific non-blank selections
+            SELECTED_FOLDERS=()
+            for SLOT in "$F1" "$F2" "$F3"; do
+              if [ "$SLOT" != "-- none --" ] && [ -n "$SLOT" ]; then
+                SELECTED_FOLDERS+=("$SLOT")
+              fi
+            done
+
+            if [ ${#SELECTED_FOLDERS[@]} -gt 0 ]; then
+              # One or more folders chosen — save and use them
+              mkdir -p .github
+              printf '%s\n' "${SELECTED_FOLDERS[@]}" > "$SAVED_FILE"
+              echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+              echo "USE_SPECIFIC=true" >> "$GITHUB_ENV"
+              echo "FOLDERS_SOURCE=dropdown (${#SELECTED_FOLDERS[@]} folder(s) selected)" >> "$GITHUB_ENV"
+              echo "FOLDERS_UPDATED=true" >> "$GITHUB_ENV"
+              echo "Saved ${#SELECTED_FOLDERS[@]} folder(s) to $SAVED_FILE:"
+              printf '  - %s\n' "${SELECTED_FOLDERS[@]}"
+            elif [ -f "$SAVED_FILE" ]; then
+              # All dropdowns left as -- none -- → use last saved selection
+              echo "FOLDERS_FILE=$SAVED_FILE" >> "$GITHUB_ENV"
+              echo "USE_SPECIFIC=true" >> "$GITHUB_ENV"
+              echo "FOLDERS_SOURCE=existing saved file ($SAVED_FILE)" >> "$GITHUB_ENV"
+              echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+            else
+              # Nothing selected and no saved file → run everything
+              echo "FOLDERS_FILE=" >> "$GITHUB_ENV"
+              echo "USE_SPECIFIC=false" >> "$GITHUB_ENV"
+              echo "FOLDERS_SOURCE=none (will process ALL folders)" >> "$GITHUB_ENV"
+              echo "FOLDERS_UPDATED=false" >> "$GITHUB_ENV"
+            fi
           fi
-      
+
       - name: Display settings
         run: |
           echo "========================================"
-          echo "STRING MACROS v3.18.86"
+          echo "STRING MACROS v3.18.87"
           echo "========================================"
           echo "Bundle ID: ${{ env.BUNDLE_SEQ }}"
           echo "Versions: ${{ github.event.inputs.versions }}"
@@ -169,23 +177,17 @@ jobs:
           else
             echo "Chat: DISABLED"
           fi
-          if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-            echo "Specific folders: ENABLED"
-            echo "Source: ${{ env.FOLDERS_SOURCE }}"
-            if [ -n "${{ env.FOLDERS_FILE }}" ]; then
-              echo "Folders:"
-              cat "${{ env.FOLDERS_FILE }}"
-            fi
-          else
-            echo "Specific folders: DISABLED (all folders)"
+          echo "Folder mode: ${{ env.FOLDERS_SOURCE }}"
+          if [ -n "${{ env.FOLDERS_FILE }}" ]; then
+            echo "Folders to process:"
+            cat "${{ env.FOLDERS_FILE }}"
           fi
           echo "========================================"
-        
+
       - name: Execute string macros script
         run: |
           mkdir -p output
-          
-          # Build arguments array
+
           ARGS=(
             "input_macros"
             "output"
@@ -193,87 +195,76 @@ jobs:
             "--target-minutes" "${{ github.event.inputs.target_minutes }}"
             "--bundle-id" "${{ env.BUNDLE_SEQ }}"
           )
-          
-          # Add --no-chat if disabled
+
           if [ "${{ inputs.enable_chat }}" = "false" ]; then
             ARGS+=("--no-chat")
           fi
-          
-          # Add --specific-folders if enabled
-          if [ "${{ inputs.use_specific_folders }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
+
+          if [ "${{ env.USE_SPECIFIC }}" = "true" ] && [ -n "${{ env.FOLDERS_FILE }}" ]; then
             ARGS+=("--specific-folders" "${{ env.FOLDERS_FILE }}")
           fi
-          
-          # Execute
+
           echo "Running: python3 string_macros.py ${ARGS[@]}"
           echo ""
           python3 string_macros.py "${ARGS[@]}"
-            
+
       - name: Commit and Push Updates
         run: |
           NEW_VAL=$((BUNDLE_SEQ + 1))
           mkdir -p .github
           echo "$NEW_VAL" > .github/string_bundle_counter.txt
-          
+
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # Add counter
+
           git add .github/string_bundle_counter.txt
-          
-          # Also add folders file if it was updated from dropdown selections
+
           if [ "${{ env.FOLDERS_UPDATED }}" = "true" ]; then
             git add ".github/specific_folders_to_include.txt"
             git commit -m "Update string folders list and increment counter to $NEW_VAL" || echo "No changes"
           else
             git commit -m "Increment bundle counter to $NEW_VAL" || echo "No changes"
           fi
-          
+
           git push || echo "Push failed"
-            
+
       - name: Add combination file to output
         run: |
           BUNDLE_DIR="output/stringed_bundle_${{ env.BUNDLE_SEQ }}"
           COMBO_FILE="output/COMBINATION_HISTORY_${{ env.BUNDLE_SEQ }}.txt"
-          
+
           if [ -f "$COMBO_FILE" ]; then
             cp "$COMBO_FILE" "$BUNDLE_DIR/" 2>/dev/null || echo "Could not copy combination file"
             echo "✓ Copied combination file to bundle"
           else
             echo "⚠️ No combination file found at $COMBO_FILE"
           fi
-            
+
       - name: Create ZIP artifact
         run: |
           BUNDLE_NAME="stringed_bundle_${{ env.BUNDLE_SEQ }}"
           ZIP_FILE="stringed_macros_${{ env.BUNDLE_SEQ }}.7z"
-          
+
           echo "Creating ZIP from: output/$BUNDLE_NAME"
           ls -R output/
-          
+
           if [ -d "output/$BUNDLE_NAME" ]; then
-            # Check if specific folders mode is enabled
-            if [ "${{ inputs.use_specific_folders }}" = "true" ]; then
-              # SPECIFIC FOLDERS MODE: Zip contents directly (flat structure)
+            if [ "${{ env.USE_SPECIFIC }}" = "true" ]; then
               echo "Specific folders mode: Creating flat 7z structure..."
 
-              # Check if directory has any content
               if [ -z "$(ls -A "output/$BUNDLE_NAME")" ]; then
                 echo "✗ Error: Directory output/$BUNDLE_NAME is empty!"
                 exit 1
               fi
 
-              # List contents before zipping
               echo "Contents to zip:"
               ls -la "output/$BUNDLE_NAME"
 
-              # 7z max compression, flat structure
               cd "output/$BUNDLE_NAME"
               7z a -mx=9 -mmt=2 "../../$ZIP_FILE" .
               cd ../..
               echo "✓ Created flat structure: $ZIP_FILE"
             else
-              # NORMAL MODE: Zip the entire bundle directory
               echo "Normal mode: Creating standard 7z structure..."
               7z a -mx=9 -mmt=2 "$ZIP_FILE" "output/$BUNDLE_NAME"
               echo "✓ Created: $ZIP_FILE"
@@ -283,7 +274,7 @@ jobs:
             exit 1
           fi
           echo "FINAL_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
-          
+
       - name: Upload stringed ZIP artifact
         uses: actions/upload-artifact@v4
         with:
