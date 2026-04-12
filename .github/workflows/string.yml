@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       folder_1:
-        description: 
+        description: 'ALL FOLDERS = run everything  |  leave all -- none -- to repeat last run'
         required: false
         default: '-- none --'
         type: choice
@@ -27,7 +27,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_2:
-        description: 'Folder 2'
+        description: ''
         required: false
         default: '-- none --'
         type: choice
@@ -50,7 +50,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_3:
-        description: 'Folder 3'
+        description: ''
         required: false
         default: '-- none --'
         type: choice
