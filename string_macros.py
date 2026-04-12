@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.89
+  Current version: v3.18.90
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -327,6 +327,14 @@ STRING MACROS - FEATURE LIST
 CHANGELOG (recent):
 ===========================================================================
 KNOWN ISSUES (not yet fixed):
+- Manifest end-time accuracy: file end times are captured inside string_cycle()
+  BEFORE apply_cycle_features() runs. Within-file pauses and the mid-event
+  multiplier pause shift subsequent events forward, so "Ends at" timestamps for
+  later files in a cycle can read slightly earlier than their true position in
+  the final output. Raw files are unaffected (no pauses). Fix requires
+  re-scanning cycle_with_features to re-derive per-file boundaries — deferred.
+===========================================================================
+KNOWN ISSUES (not yet fixed): (not yet fixed):
 - Doubly-nested folder last-subfolder skip (FM+COOK F6-Wait / Cook F6-Wait):
   Even after v3.18.88's fix (skip outer used_combinations check when all slots
   are nested), occasional cycles are still observed without the final subfolder
@@ -571,7 +579,7 @@ KNOWN ISSUES (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.89"
+VERSION = "v3.18.90"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3351,7 +3359,7 @@ def main():
     if _logout_folder:
         print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
         _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout.json"
+        _lo_dest = Path(args.output_root) / "- logout random break.json"
         _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
         if _built:
             logout_file = _built
@@ -3655,18 +3663,30 @@ def main():
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
-        # Copy logout file with @ prefix
+        # Copy random-break logout sequence as "@ LOGOUT RANDOM BREAK.json"
         if logout_file:
             try:
-                original_name = logout_file.name
-                if original_name.startswith("-"):
-                    new_name = f"@ {folder_number} {original_name[1:].strip()}".upper()
-                else:
-                    new_name = f"@ {folder_number} {original_name}".upper()
-                shutil.copy2(logout_file, out_folder / new_name)
-                print(f"  ? Copied logout: {new_name}")
+                shutil.copy2(logout_file, out_folder / "@ LOGOUT RANDOM BREAK.json")
+                print(f"  ✓ Copied logout random break: @ LOGOUT RANDOM BREAK.json")
             except Exception as e:
-                print(f"  ? Error copying logout: {e}")
+                print(f"  ? Error copying logout random break: {e}")
+
+        # Copy fixed final logout files from input_macros root.
+        # These two files live at the repo root, are inserted into every
+        # strung folder completely unmodified, with @ replacing the leading -.
+        for _fixed_name in [
+            "- Final logout.json",
+            "- 123 Proper logout+wait+RELOGIN.json",
+        ]:
+            _fixed_src = search_base / _fixed_name
+            if _fixed_src.exists():
+                # Replace leading "-" with "@", keep rest of name as-is
+                _fixed_dest_name = "@ " + _fixed_name[1:].lstrip()
+                try:
+                    shutil.copy2(_fixed_src, out_folder / _fixed_dest_name)
+                    print(f"  ✓ Copied fixed logout: {_fixed_dest_name}")
+                except Exception as e:
+                    print(f"  ? Error copying {_fixed_name}: {e}")
         
         # Copy non-JSON files with @ prefix
         for non_json_file in non_json_files:
@@ -3831,7 +3851,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.89"
+VERSION = "v3.18.90"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7220,7 +7240,7 @@ def main():
     if _logout_folder:
         print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
         _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout.json"
+        _lo_dest = Path(args.output_root) / "- logout random break.json"
         _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
         if _built:
             logout_file = _built
@@ -7524,18 +7544,30 @@ def main():
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
-        # Copy logout file with @ prefix
+        # Copy random-break logout sequence as "@ LOGOUT RANDOM BREAK.json"
         if logout_file:
             try:
-                original_name = logout_file.name
-                if original_name.startswith("-"):
-                    new_name = f"@ {folder_number} {original_name[1:].strip()}".upper()
-                else:
-                    new_name = f"@ {folder_number} {original_name}".upper()
-                shutil.copy2(logout_file, out_folder / new_name)
-                print(f"  ? Copied logout: {new_name}")
+                shutil.copy2(logout_file, out_folder / "@ LOGOUT RANDOM BREAK.json")
+                print(f"  ✓ Copied logout random break: @ LOGOUT RANDOM BREAK.json")
             except Exception as e:
-                print(f"  ? Error copying logout: {e}")
+                print(f"  ? Error copying logout random break: {e}")
+
+        # Copy fixed final logout files from input_macros root.
+        # These two files live at the repo root, are inserted into every
+        # strung folder completely unmodified, with @ replacing the leading -.
+        for _fixed_name in [
+            "- Final logout.json",
+            "- 123 Proper logout+wait+RELOGIN.json",
+        ]:
+            _fixed_src = search_base / _fixed_name
+            if _fixed_src.exists():
+                # Replace leading "-" with "@", keep rest of name as-is
+                _fixed_dest_name = "@ " + _fixed_name[1:].lstrip()
+                try:
+                    shutil.copy2(_fixed_src, out_folder / _fixed_dest_name)
+                    print(f"  ✓ Copied fixed logout: {_fixed_dest_name}")
+                except Exception as e:
+                    print(f"  ? Error copying {_fixed_name}: {e}")
         
         # Copy non-JSON files with @ prefix
         for non_json_file in non_json_files:
