@@ -27,7 +27,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_2:
-        description: ''
+        description:
         required: false
         default: '-- none --'
         type: choice
@@ -50,7 +50,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_3:
-        description: ''
+        description:
         required: false
         default: '-- none --'
         type: choice
