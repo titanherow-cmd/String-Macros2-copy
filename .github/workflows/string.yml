@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       folder_1:
-        description:
+        description: 'Folder 1'
         required: false
         default: '-- none --'
         type: choice
@@ -27,7 +27,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_2:
-        description:
+        description: 'Folder 2'
         required: false
         default: '-- none --'
         type: choice
@@ -50,7 +50,7 @@ on:
           - 'FM+COOK straight spot'
           - 'TEST'
       folder_3:
-        description:
+        description: 'Folder 3'
         required: false
         default: '-- none --'
         type: choice
