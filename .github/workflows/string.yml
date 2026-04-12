@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       folder_1:
-        description: 'ALL FOLDERS = run everything  |  leave all -- none -- to repeat last run'
+        description:
         required: false
         default: '-- none --'
         type: choice
