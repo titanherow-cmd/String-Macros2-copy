@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.90
+  Current version: v3.18.91
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -579,7 +579,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.90"
+VERSION = "v3.18.91"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3223,8 +3223,8 @@ def build_logout_sequence(folder_path, rng, out_path):
         merged.append({**e, 'Time': e['Time'] + timeline})
     timeline += dur2
 
-    # Random wait: 1 minute to 3 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    # Random wait: 40 minutes to 1.5 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(2400000.0, 5400000.0)
     timeline += random_wait_ms
 
     # Pre-play buffer 2->3
@@ -3671,16 +3671,17 @@ def main():
             except Exception as e:
                 print(f"  ? Error copying logout random break: {e}")
 
-        # Copy fixed final logout files from input_macros root.
-        # These two files live at the repo root, are inserted into every
-        # strung folder completely unmodified, with @ replacing the leading -.
+        # Copy fixed final logout files from REPO ROOT (one level above input_macros).
+        # These two files live at repo root, not inside input_macros/.
+        # Inserted into every strung folder completely unmodified — no features,
+        # no processing. @ replaces the leading - in the filename.
         for _fixed_name in [
             "- Final logout.json",
             "- 123 Proper logout+wait+RELOGIN.json",
         ]:
-            _fixed_src = search_base / _fixed_name
+            _fixed_src = search_base.parent / _fixed_name
             if _fixed_src.exists():
-                # Replace leading "-" with "@", keep rest of name as-is
+                # Replace leading "-" with "@", keep rest of name exactly as-is
                 _fixed_dest_name = "@ " + _fixed_name[1:].lstrip()
                 try:
                     shutil.copy2(_fixed_src, out_folder / _fixed_dest_name)
@@ -3688,8 +3689,11 @@ def main():
                 except Exception as e:
                     print(f"  ? Error copying {_fixed_name}: {e}")
         
-        # Copy non-JSON files with @ prefix
+        # Copy non-JSON files with @ prefix (images, txt, etc — not temp/part files)
+        _NONJSON_SKIP_EXTS = {".part", ".tmp", ".bak", ".swp", ".ds_store"}
         for non_json_file in non_json_files:
+            if non_json_file.suffix.lower() in _NONJSON_SKIP_EXTS:
+                continue
             try:
                 original_name = non_json_file.name
                 if original_name.startswith("-"):
@@ -3697,7 +3701,7 @@ def main():
                 else:
                     new_name = f"@ {folder_number} {original_name}"
                 shutil.copy2(non_json_file, out_folder / new_name)
-                print(f"  ? Copied non-JSON: {new_name}")
+                print(f"  ✓ Copied non-JSON: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying {non_json_file.name}: {e}")
         
@@ -3851,7 +3855,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.90"
+VERSION = "v3.18.91"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7104,8 +7108,8 @@ def build_logout_sequence(folder_path, rng, out_path):
         merged.append({**e, 'Time': e['Time'] + timeline})
     timeline += dur2
 
-    # Random wait: 1 minute to 3 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(60000.0, 10800000.0)
+    # Random wait: 40 minutes to 1.5 hours, float ms, never rounded
+    random_wait_ms = rng.uniform(2400000.0, 5400000.0)
     timeline += random_wait_ms
 
     # Pre-play buffer 2->3
@@ -7552,16 +7556,17 @@ def main():
             except Exception as e:
                 print(f"  ? Error copying logout random break: {e}")
 
-        # Copy fixed final logout files from input_macros root.
-        # These two files live at the repo root, are inserted into every
-        # strung folder completely unmodified, with @ replacing the leading -.
+        # Copy fixed final logout files from REPO ROOT (one level above input_macros).
+        # These two files live at repo root, not inside input_macros/.
+        # Inserted into every strung folder completely unmodified — no features,
+        # no processing. @ replaces the leading - in the filename.
         for _fixed_name in [
             "- Final logout.json",
             "- 123 Proper logout+wait+RELOGIN.json",
         ]:
-            _fixed_src = search_base / _fixed_name
+            _fixed_src = search_base.parent / _fixed_name
             if _fixed_src.exists():
-                # Replace leading "-" with "@", keep rest of name as-is
+                # Replace leading "-" with "@", keep rest of name exactly as-is
                 _fixed_dest_name = "@ " + _fixed_name[1:].lstrip()
                 try:
                     shutil.copy2(_fixed_src, out_folder / _fixed_dest_name)
@@ -7569,8 +7574,11 @@ def main():
                 except Exception as e:
                     print(f"  ? Error copying {_fixed_name}: {e}")
         
-        # Copy non-JSON files with @ prefix
+        # Copy non-JSON files with @ prefix (images, txt, etc — not temp/part files)
+        _NONJSON_SKIP_EXTS = {".part", ".tmp", ".bak", ".swp", ".ds_store"}
         for non_json_file in non_json_files:
+            if non_json_file.suffix.lower() in _NONJSON_SKIP_EXTS:
+                continue
             try:
                 original_name = non_json_file.name
                 if original_name.startswith("-"):
@@ -7578,7 +7586,7 @@ def main():
                 else:
                     new_name = f"@ {folder_number} {original_name}"
                 shutil.copy2(non_json_file, out_folder / new_name)
-                print(f"  ? Copied non-JSON: {new_name}")
+                print(f"  ✓ Copied non-JSON: {new_name}")
             except Exception as e:
                 print(f"  ? Error copying {non_json_file.name}: {e}")
         
