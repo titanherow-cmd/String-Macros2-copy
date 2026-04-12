@@ -24,7 +24,7 @@ on:
           - 'Fishing click+time sensitive - Copy'
           - 'Fishing experimental- click+time sensitive'
           - 'FM straight spot- TIME SENSITIVE'
-          - 'FM+COOK straight spot - TIME SENSITIVE'
+          - 'FM+COOK straight spot'
           - 'TEST'
       folder_2:
         description: 'Folder 2'
@@ -72,11 +72,6 @@ on:
           - 'FM straight spot- TIME SENSITIVE'
           - 'FM+COOK straight spot'
           - 'TEST'
-      enable_chat:
-        description: 'Enable chat inserts (50% of files)'
-        required: false
-        default: false
-        type: boolean
       versions:
         description: 'Total versions to generate *'
         required: true
@@ -85,6 +80,11 @@ on:
         description: 'Target duration per stringed file *'
         required: true
         default: '60'
+      enable_chat:
+        description: 'Enable chat inserts (50% of files)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
