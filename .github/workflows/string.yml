@@ -25,7 +25,7 @@ on:
           - 'Fishing experimental- click+time sensitive'
           - 'FM straight spot- TIME SENSITIVE'
           - 'FM+COOK straight spot - TIME SENSITIVE'
-          - 'TEST'
+          - '55- mMining- alkharid U1T- inz- N- TIME SENSITIVE'
       folder_2:
         description: 'Folder 2'
         required: false
@@ -48,7 +48,7 @@ on:
           - 'Fishing experimental- click+time sensitive'
           - 'FM straight spot- TIME SENSITIVE'
           - 'FM+COOK straight spot - TIME SENSITIVE'
-          - 'TEST'
+          - '55- mMining- alkharid U1T- inz- N- TIME SENSITIVE'
       folder_3:
         description: 'Folder 3'
         required: false
@@ -71,7 +71,7 @@ on:
           - 'Fishing experimental- click+time sensitive'
           - 'FM straight spot- TIME SENSITIVE'
           - 'FM+COOK straight spot - TIME SENSITIVE'
-          - 'TEST'
+          - '55- mMining- alkharid U1T- inz- N- TIME SENSITIVE'
       versions:
         description: 'Total versions to generate *'
         required: true
