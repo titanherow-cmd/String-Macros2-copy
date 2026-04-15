@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.91
+  Current version: v3.18.92
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -234,9 +234,11 @@ STRING MACROS - FEATURE LIST
     On load: two checks, both shift all events from the click forward.
     Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
-    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
+    Part B — DragEnd->DragStart gap < 200ms shifted to 200ms.
     Prevents too-fast re-press sequences where the macro player cannot
     distinguish a genuine release+re-click from a single held drag.
+    Threshold raised from 150ms to 200ms (v3.18.92): recordings with
+    natural re-click gaps of 150-199ms were slipping through unpatched.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -377,6 +379,18 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.92: Part B threshold raised 150ms → 200ms (drag clamp fix).
+            ROOT CAUSE: _DRAG_REPRESS_THRESHOLD was 150ms, so DragEnd→DragStart
+            gaps in the 150-199ms range passed through Part B uncorrected.
+            Smithing/rapid-click source recordings contain natural re-presses in
+            that window (human fast click ~160-180ms). Confirmed: _62_A_14m4s.json
+            had 8 sub-200ms DragEnd→DragStart pairs (174ms, 175ms, 180ms, etc.)
+            causing the macro player to interpret rapid re-clicks as a held drag.
+            FIX: raise threshold from 150 to 200ms. Any gap < 200ms is now shifted
+            to exactly 200ms — matching the existing _DRAG_REPRESS_TARGET value.
+            The 11 exactly-200ms pairs already in the file confirm Part B was
+            firing correctly for the truly fast pairs (< 150ms). This extends
+            coverage to the full [0, 200ms) danger zone. Applied to both copies.
 - v3.18.85: Rapid-click protection hardening:
             1. insert_intra_file_pauses: extended pause-point exclusion from DragStart-only
                to ALL press/release types (LeftDown, LeftUp, RightDown, RightUp, Click,
@@ -579,7 +593,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.91"
+VERSION = "v3.18.92"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1695,15 +1709,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   once" - causing a left-button clamp at that position.
         #   Threshold: 15ms  |  Target separation: 20ms
         #
-        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        # Part B — DragEnd -> DragStart gap < 200ms ("too-fast re-press")
         #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
-        #   The macro player doesn't have enough time to register a genuine button
-        #   release and re-press — it reads the pair as a single continuous hold,
-        #   causing the left-button to clamp. 150ms was chosen because it covers
-        #   all observed problem pairs (52-130ms) with headroom; human re-click
-        #   reactions are typically 200ms+, so 200ms target is imperceptible.
-        #   Threshold: 150ms  |  Target separation: 200ms
+        #   DragStart at the same or nearby coordinate. The macro player cannot
+        #   distinguish a genuine button release + re-click from a single held drag
+        #   in that time window, causing left-button clamp.
+        #   v3.18.79: threshold was 150ms (covered 52-130ms observed cases).
+        #   v3.18.92: raised to 200ms — smithing/rapid-click source recordings
+        #   contain natural re-presses of 150-199ms that slipped through at 150ms.
+        #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
         # Part A: MouseMove -> click-type zero-gap
@@ -1719,7 +1733,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
         # Part B: DragEnd -> DragStart too-fast re-press
-        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_THRESHOLD = 200   # ms - re-press faster than this = clamp risk
         _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
         for _zi in range(1, len(events)):
             if (events[_zi].get('Type') == 'DragStart'
@@ -3855,7 +3869,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.91"
+VERSION = "v3.18.92"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5580,15 +5594,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   once" - causing a left-button clamp at that position.
         #   Threshold: 15ms  |  Target separation: 20ms
         #
-        # Part B — DragEnd -> DragStart gap < 150ms ("too-fast re-press")
+        # Part B — DragEnd -> DragStart gap < 200ms ("too-fast re-press")
         #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate (typically 50-130ms apart).
-        #   The macro player doesn't have enough time to register a genuine button
-        #   release and re-press — it reads the pair as a single continuous hold,
-        #   causing the left-button to clamp. 150ms was chosen because it covers
-        #   all observed problem pairs (52-130ms) with headroom; human re-click
-        #   reactions are typically 200ms+, so 200ms target is imperceptible.
-        #   Threshold: 150ms  |  Target separation: 200ms
+        #   DragStart at the same or nearby coordinate. The macro player cannot
+        #   distinguish a genuine button release + re-click from a single held drag
+        #   in that time window, causing left-button clamp.
+        #   v3.18.79: threshold was 150ms (covered 52-130ms observed cases).
+        #   v3.18.92: raised to 200ms — smithing/rapid-click source recordings
+        #   contain natural re-presses of 150-199ms that slipped through at 150ms.
+        #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
         # Part A: MouseMove -> click-type zero-gap
@@ -5604,7 +5618,7 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
         # Part B: DragEnd -> DragStart too-fast re-press
-        _DRAG_REPRESS_THRESHOLD = 150   # ms - re-press faster than this = clamp risk
+        _DRAG_REPRESS_THRESHOLD = 200   # ms - re-press faster than this = clamp risk
         _DRAG_REPRESS_TARGET    = 200   # ms - minimum release time to enforce
         for _zi in range(1, len(events)):
             if (events[_zi].get('Type') == 'DragStart'
