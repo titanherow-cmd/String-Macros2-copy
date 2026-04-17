@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.92
+  Current version: v3.18.93
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -234,11 +234,9 @@ STRING MACROS - FEATURE LIST
     On load: two checks, both shift all events from the click forward.
     Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
-    Part B — DragEnd->DragStart gap < 200ms shifted to 200ms.
+    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
     Prevents too-fast re-press sequences where the macro player cannot
     distinguish a genuine release+re-click from a single held drag.
-    Threshold raised from 150ms to 200ms (v3.18.92): recordings with
-    natural re-click gaps of 150-199ms were slipping through unpatched.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -277,8 +275,11 @@ STRING MACROS - FEATURE LIST
       - File containing 'relogin' → slot 3: re-login actions
     Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
                      500-800ms buffer → slot3
-    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
-                 Float value, never rounded — full millisecond precision.
+    Two break files built per output folder (each with a fresh random wait):
+    Long break:  7200000–16200000 ms (2h–4.5h)
+    Short break: 1800000– 5400000 ms (30min–90min)
+    Float ms, never rounded.
+    Outputs: "@ LOGOUT LONG BREAK.json" + "@ LOGOUT SHORT BREAK.json"
     Features: NO anti-detection features applied (files inserted raw).
               filter_problematic_keys() is applied on load.
     Output: written to output_root/- logout.json, then copied to each
@@ -313,8 +314,11 @@ STRING MACROS - FEATURE LIST
       - File containing 'relogin' → slot 3: re-login actions
     Stringing order: slot1 → 500-800ms buffer → slot2 → RANDOM WAIT →
                      500-800ms buffer → slot3
-    Random wait: rng.uniform(60000, 10800000) ms (1 minute to 3 hours).
-                 Float value, never rounded — full millisecond precision.
+    Two break files built per output folder (each with a fresh random wait):
+    Long break:  7200000–16200000 ms (2h–4.5h)
+    Short break: 1800000– 5400000 ms (30min–90min)
+    Float ms, never rounded.
+    Outputs: "@ LOGOUT LONG BREAK.json" + "@ LOGOUT SHORT BREAK.json"
     Features: NO anti-detection features applied (files inserted raw).
               filter_problematic_keys() is applied on load.
     Output: written to output_root/- logout.json, then copied to each
@@ -379,18 +383,21 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.93: Two new features:
+            1. DUPLICATE FOLDER SUPPORT: selecting the same folder in multiple
+               dropdown slots now produces one independent output folder per
+               selection. The 2nd occurrence is named "(N) FolderName (2)", the
+               3rd "(N) FolderName (3)", etc. Each run uses its own RNG state so
+               the file combinations differ between copies.
+               Implementation: entries_list ordered list replaces the old entries
+               dict; _run_suffix added to each folder_data for output naming.
+            2. LOGOUT SHORT BREAK + LONG BREAK files (old RANDOM BREAK retired).
+               build_logout_sequence() gains wait_range_ms=(lo, hi) parameter.
+               Called twice per output folder with a fresh unseeded RNG each call:
+               Long:  (7200000, 16200000) ms = 2h – 4.5h
+               Short: (1800000,  5400000) ms = 30min – 90min
+               Waits are float ms, never rounded, different every folder+run.
 - v3.18.92: Part B threshold raised 150ms → 200ms (drag clamp fix).
-            ROOT CAUSE: _DRAG_REPRESS_THRESHOLD was 150ms, so DragEnd→DragStart
-            gaps in the 150-199ms range passed through Part B uncorrected.
-            Smithing/rapid-click source recordings contain natural re-presses in
-            that window (human fast click ~160-180ms). Confirmed: _62_A_14m4s.json
-            had 8 sub-200ms DragEnd→DragStart pairs (174ms, 175ms, 180ms, etc.)
-            causing the macro player to interpret rapid re-clicks as a held drag.
-            FIX: raise threshold from 150 to 200ms. Any gap < 200ms is now shifted
-            to exactly 200ms — matching the existing _DRAG_REPRESS_TARGET value.
-            The 11 exactly-200ms pairs already in the file confirm Part B was
-            firing correctly for the truly fast pairs (< 150ms). This extends
-            coverage to the full [0, 200ms) danger zone. Applied to both copies.
 - v3.18.85: Rapid-click protection hardening:
             1. insert_intra_file_pauses: extended pause-point exclusion from DragStart-only
                to ALL press/release types (LeftDown, LeftUp, RightDown, RightUp, Click,
@@ -593,7 +600,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.92"
+VERSION = "v3.18.93"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1710,13 +1717,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   Threshold: 15ms  |  Target separation: 20ms
         #
         # Part B — DragEnd -> DragStart gap < 200ms ("too-fast re-press")
-        #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate. The macro player cannot
-        #   distinguish a genuine button release + re-click from a single held drag
-        #   in that time window, causing left-button clamp.
-        #   v3.18.79: threshold was 150ms (covered 52-130ms observed cases).
-        #   v3.18.92: raised to 200ms — smithing/rapid-click source recordings
-        #   contain natural re-presses of 150-199ms that slipped through at 150ms.
+        #   Source recordings may contain rapid re-presses in the 0–199ms range.
+        #   The macro player cannot distinguish a genuine release + re-click from
+        #   a single held drag in that window, causing left-button clamp.
+        #   v3.18.79: threshold 150ms. v3.18.92/93: raised to 200ms.
         #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
@@ -3143,7 +3147,7 @@ class VirtualDistQueue:
 # LOGOUT SEQUENCE BUILDER (Feature 40)
 # ============================================================================
 
-def build_logout_sequence(folder_path, rng, out_path):
+def build_logout_sequence(folder_path, rng, out_path, wait_range_ms=(7200000.0, 16200000.0)):
     """
     Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
 
@@ -3157,8 +3161,9 @@ def build_logout_sequence(folder_path, rng, out_path):
       slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
            -> pre-play buffer (500-800 ms) -> slot3
 
-    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
-                 Float, never rounded — full millisecond precision.
+    Random wait: drawn from wait_range_ms (float ms, never rounded).
+    Default long break: 7200000–16200000 ms (2h–4.5h).
+    Short break call:   1800000– 5400000 ms (30min–90min).
 
     No anti-detection features applied. filter_problematic_keys() runs on load.
     Writes to out_path; caller should name it '- logout.json' so the existing
@@ -3237,8 +3242,8 @@ def build_logout_sequence(folder_path, rng, out_path):
         merged.append({**e, 'Time': e['Time'] + timeline})
     timeline += dur2
 
-    # Random wait: 40 minutes to 1.5 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(2400000.0, 5400000.0)
+    # Random wait: drawn from wait_range_ms — float ms, never rounded
+    random_wait_ms = rng.uniform(*wait_range_ms)
     timeline += random_wait_ms
 
     # Pre-play buffer 2->3
@@ -3358,12 +3363,9 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
-    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
-    # build_logout_sequence() strings its 3 files and writes the result to
-    # output_root/- logout.json, which the copy block below picks up unchanged.
-    # Falls back to the old static '- logout.json' search if the folder is absent.
-    logout_file = None
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — detect folder; build per output folder.
+    # Long break (2h–4.5h) and Short break (30–90min) are generated fresh per
+    # output folder so every folder gets a different random wait duration.
     _logout_folder = None
     for _d in search_base.iterdir():
         if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
@@ -3371,28 +3373,10 @@ def main():
             break
 
     if _logout_folder:
-        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout random break.json"
-        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
-        if _built:
-            logout_file = _built
-        else:
-            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+        print(f"  Found LOGOUT folder: '{_logout_folder.name}'")
+        print(f"  Long break (2h-4.5h) + Short break (30-90min) generated per output folder.")
     else:
-        # Fallback: look for a static logout .json at root level
-        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
-                           "logout", "- logout", "-logout"]
-        for location_dir in [search_base, search_base.parent]:
-            if logout_file:
-                break
-            for pattern in logout_patterns:
-                test_file = location_dir / pattern
-                for test_path in [test_file, Path(str(test_file) + ".json")]:
-                    if test_path.exists() and test_path.is_file():
-                        logout_file = test_path
-                        print(f"? Found logout file: {logout_file.name}")
-                        break
+        print(f"  No LOGOUT folder found -- break files will not be generated.")
 
     print()
 
@@ -3478,7 +3462,10 @@ def main():
             # Parse lines — each line is either "FolderName" or "FolderName: F1, F2"
             # GitHub Actions may collapse newlines; handle commas-as-separators only
             # when there is NO colon present (legacy behaviour).
-            entries = {}   # {folder_name_lower: set_of_subfolder_nums_or_None}
+            # DUPLICATE SUPPORT: entries_list is an ORDERED LIST of (name, sf_filter)
+            # tuples. The same folder name may appear multiple times — each occurrence
+            # produces one independent output folder, suffixed " (2)", " (3)", etc.
+            entries_list = []   # [(folder_name_lower, sf_filter_or_None), ...]
             for raw_line in raw_text.splitlines():
                 line = raw_line.strip()
                 if not line:
@@ -3507,68 +3494,77 @@ def main():
                             single_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)$', tok)
                             if single_m:
                                 sf_nums.add(float(single_m.group(1)))
-                    entries[folder_key] = sf_nums if sf_nums else None
+                    entries_list.append((folder_key, sf_nums if sf_nums else None))
                 else:
                     # No colon — legacy comma-separated folder names (no subfolder filter)
                     for name in line.replace(',', '\n').splitlines():
                         name = name.strip()
                         if name:
-                            entries[name.lower()] = None  # None = all subfolders
+                            entries_list.append((name.lower(), None))
 
-            if entries:
+            if entries_list:
                 print(f"\n Filtering to specific folders only:")
-                for name, sfs in entries.items():
+                for name, sfs in entries_list:
                     sf_str = f" (subfolders: {sorted(sfs)})" if sfs else " (all subfolders)"
                     print(f"  - {name}{sf_str}")
 
                 filtered_folders = []
-                for folder_data in main_folders:
-                    key = folder_data['name'].lower()
-                    if key in entries:
-                        sf_filter = entries[key]
-                        if sf_filter:
-                            # Keep only the requested numbered subfolders
-                            original_subs = folder_data['subfolders']
-                            filtered_subs = {}
-                            for num, data in original_subs.items():
-                                if round(num, 4) in sf_filter or num == 0:
-                                    # Force-include: strip optional/end so it always runs
-                                    forced = dict(data)
-                                    forced['is_optional']     = False
-                                    forced['is_end']          = False
-                                    forced['is_optional_end'] = False
-                                    filtered_subs[num] = forced
-                            if not filtered_subs:
-                                print(f"  [!] No matching subfolders found in '{folder_data['name']}'")
-                                print(f"      Requested: {sorted(sf_filter)}")
-                                print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
-                                continue
-                            # Clone folder_data with filtered+forced subfolders
-                            filtered_fd = dict(folder_data)
-                            filtered_fd['subfolders'] = filtered_subs
-                            filtered_folders.append(filtered_fd)
-                        else:
-                            filtered_folders.append(folder_data)
+                _name_run_count = {}  # {name_lower: run_count} — tracks duplicates
+
+                for _req_name, _sf_filter in entries_list:
+                    # Find matching folder in scanned main_folders
+                    _matched_fd = None
+                    for _fd in main_folders:
+                        if _fd['name'].lower() == _req_name:
+                            _matched_fd = _fd
+                            break
+                    if _matched_fd is None:
+                        continue  # not found as top-level; caught by subfolder fallback
+
+                    # Assign run suffix for duplicates
+                    _name_run_count[_req_name] = _name_run_count.get(_req_name, 0) + 1
+                    _rsuffix = f" ({_name_run_count[_req_name]})" if _name_run_count[_req_name] > 1 else ""
+
+                    if _sf_filter:
+                        original_subs = _matched_fd['subfolders']
+                        filtered_subs = {}
+                        for num, data in original_subs.items():
+                            if round(num, 4) in _sf_filter or num == 0:
+                                forced = dict(data)
+                                forced['is_optional']     = False
+                                forced['is_end']          = False
+                                forced['is_optional_end'] = False
+                                filtered_subs[num] = forced
+                        if not filtered_subs:
+                            print(f"  [!] No matching subfolders found in '{_matched_fd['name']}'")
+                            print(f"      Requested: {sorted(_sf_filter)}")
+                            print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
+                            continue
+                        filtered_fd = dict(_matched_fd)
+                        filtered_fd['subfolders'] = filtered_subs
+                        filtered_fd['_run_suffix'] = _rsuffix
+                        filtered_folders.append(filtered_fd)
+                    else:
+                        filtered_fd = dict(_matched_fd)
+                        filtered_fd['_run_suffix'] = _rsuffix
+                        filtered_folders.append(filtered_fd)
 
                 if not filtered_folders:
                     # Fallback: search by subfolder name (no colon needed)
-                    # If the written name matches a subfolder folder_name, auto-promote it
+                    _req_names_set = {n for n, _ in entries_list}
                     for folder_data in main_folders:
                         for sf_num, sf_data in folder_data['subfolders'].items():
                             sf_name = sf_data.get('folder_name', '')
-                            if sf_name.lower() in entries:
+                            if sf_name.lower() in _req_names_set:
                                 print(f"  [->] '{sf_name}' matched as subfolder of '{folder_data['name']}'")
-                                # Build a synthetic main_folder from this single subfolder
-                                # Force always-included (strip optional/end tags)
                                 forced_sf = dict(sf_data)
                                 forced_sf['is_optional']     = False
                                 forced_sf['is_end']          = False
                                 forced_sf['is_optional_end'] = False
-                                forced_sf['max_files']       = 1  # ignored — nested handles loops
+                                forced_sf['max_files']       = 1
 
                                 nsf = sf_data.get('nested_subfolder_files')
                                 if nsf:
-                                    # Nested: promote inner structure as top-level
                                     synthetic = {
                                         'path': sf_data.get('folder_path', folder_data['path']),
                                         'name': sf_name,
@@ -3579,7 +3575,6 @@ def main():
                                         'non_json':   folder_data.get('non_json', []),
                                     }
                                 else:
-                                    # Regular subfolder: treat as flat/single-subfolder folder
                                     synthetic = {
                                         'path': sf_data.get('folder_path', folder_data['path']),
                                         'name': sf_name,
@@ -3589,11 +3584,12 @@ def main():
                                         'dmwm_files': folder_data.get('dmwm_files', set()),
                                         'non_json':   folder_data.get('non_json', []),
                                     }
+                                synthetic['_run_suffix'] = ''
                                 filtered_folders.append(synthetic)
 
                 if not filtered_folders:
                     print(f"\n[X] None of the specified folders were found!")
-                    print(f"   Looking for: {list(entries.keys())}")
+                    print(f"   Looking for: {[n for n, _ in entries_list]}")
                     print(f"   Available main folders: {[f['name'] for f in main_folders]}")
                     print(f"   TIP: You can also write a subfolder name directly:")
                     print(f"     F0.5 optional-7- CAM2       <- auto-found inside any main folder")
@@ -3602,6 +3598,9 @@ def main():
                     sys.exit(1)
 
                 main_folders = filtered_folders
+                for _dn, _dc in _name_run_count.items():
+                    if _dc > 1:
+                        print(f"  [dup] '{_dn}' selected {_dc}x -- {_dc} separate output folders")
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
                 print(f"\n[!]?  Specific folders file is empty, processing ALL folders")
@@ -3670,20 +3669,41 @@ def main():
         
         
         # Create output folder - append bundle ID in specific folders mode
+        # _run_suffix (" (2)", " (3)") is set when the same folder is selected
+        # multiple times via the dropdowns, giving each run a distinct output name.
         output_folder_name = cleaned_folder_name
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
+            _run_suffix = folder_data.get('_run_suffix', '')
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}{_run_suffix}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
-        # Copy random-break logout sequence as "@ LOGOUT RANDOM BREAK.json"
-        if logout_file:
-            try:
-                shutil.copy2(logout_file, out_folder / "@ LOGOUT RANDOM BREAK.json")
-                print(f"  ✓ Copied logout random break: @ LOGOUT RANDOM BREAK.json")
-            except Exception as e:
-                print(f"  ? Error copying logout random break: {e}")
+        # Generate LONG BREAK + SHORT BREAK per folder (fresh unseeded RNG each call).
+        # Long:  2h – 4.5h   (7200000–16200000 ms)
+        # Short: 30min – 90min (1800000– 5400000 ms)
+        if _logout_folder:
+            _fl_rng = random.Random()  # unseeded — different per folder and per run
+            _lo_long_p  = Path(args.output_root) / "- logout long break.json"
+            _lo_short_p = Path(args.output_root) / "- logout short break.json"
+            _long_built  = build_logout_sequence(
+                _logout_folder, _fl_rng, _lo_long_p,
+                wait_range_ms=(7200000.0, 16200000.0))
+            _short_built = build_logout_sequence(
+                _logout_folder, _fl_rng, _lo_short_p,
+                wait_range_ms=(1800000.0, 5400000.0))
+            if _long_built:
+                try:
+                    shutil.copy2(_long_built,  out_folder / "@ LOGOUT LONG BREAK.json")
+                    print(f"  Copied: @ LOGOUT LONG BREAK.json")
+                except Exception as _e:
+                    print(f"  [!] Error copying long break: {_e}")
+            if _short_built:
+                try:
+                    shutil.copy2(_short_built, out_folder / "@ LOGOUT SHORT BREAK.json")
+                    print(f"  Copied: @ LOGOUT SHORT BREAK.json")
+                except Exception as _e:
+                    print(f"  [!] Error copying short break: {_e}")
 
         # Copy fixed final logout files from REPO ROOT (one level above input_macros).
         # These two files live at repo root, not inside input_macros/.
@@ -3869,7 +3889,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.92"
+VERSION = "v3.18.93"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5595,13 +5615,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   Threshold: 15ms  |  Target separation: 20ms
         #
         # Part B — DragEnd -> DragStart gap < 200ms ("too-fast re-press")
-        #   Some recordings have a DragEnd followed almost immediately by another
-        #   DragStart at the same or nearby coordinate. The macro player cannot
-        #   distinguish a genuine button release + re-click from a single held drag
-        #   in that time window, causing left-button clamp.
-        #   v3.18.79: threshold was 150ms (covered 52-130ms observed cases).
-        #   v3.18.92: raised to 200ms — smithing/rapid-click source recordings
-        #   contain natural re-presses of 150-199ms that slipped through at 150ms.
+        #   Source recordings may contain rapid re-presses in the 0–199ms range.
+        #   The macro player cannot distinguish a genuine release + re-click from
+        #   a single held drag in that window, causing left-button clamp.
+        #   v3.18.79: threshold 150ms. v3.18.92/93: raised to 200ms.
         #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
@@ -7028,7 +7045,7 @@ class VirtualDistQueue:
 # LOGOUT SEQUENCE BUILDER (Feature 40)
 # ============================================================================
 
-def build_logout_sequence(folder_path, rng, out_path):
+def build_logout_sequence(folder_path, rng, out_path, wait_range_ms=(7200000.0, 16200000.0)):
     """
     Build a strung logout sequence from the 'LOGOUT, wait, in' folder (Feature 40).
 
@@ -7042,8 +7059,9 @@ def build_logout_sequence(folder_path, rng, out_path):
       slot1 -> pre-play buffer (500-800 ms) -> slot2 -> RANDOM WAIT
            -> pre-play buffer (500-800 ms) -> slot3
 
-    Random wait: rng.uniform(60000, 10800000) ms  (1 minute to 3 hours).
-                 Float, never rounded — full millisecond precision.
+    Random wait: drawn from wait_range_ms (float ms, never rounded).
+    Default long break: 7200000–16200000 ms (2h–4.5h).
+    Short break call:   1800000– 5400000 ms (30min–90min).
 
     No anti-detection features applied. filter_problematic_keys() runs on load.
     Writes to out_path; caller should name it '- logout.json' so the existing
@@ -7122,8 +7140,8 @@ def build_logout_sequence(folder_path, rng, out_path):
         merged.append({**e, 'Time': e['Time'] + timeline})
     timeline += dur2
 
-    # Random wait: 40 minutes to 1.5 hours, float ms, never rounded
-    random_wait_ms = rng.uniform(2400000.0, 5400000.0)
+    # Random wait: drawn from wait_range_ms — float ms, never rounded
+    random_wait_ms = rng.uniform(*wait_range_ms)
     timeline += random_wait_ms
 
     # Pre-play buffer 2->3
@@ -7243,12 +7261,9 @@ def main():
     else:
         print(f"  No distraction trigger found - distraction generation disabled")
     
-    # LOGOUT SEQUENCE FOLDER (Feature 40) — takes priority over static file.
-    # If a folder named 'LOGOUT, wait, in' exists at input_macros root,
-    # build_logout_sequence() strings its 3 files and writes the result to
-    # output_root/- logout.json, which the copy block below picks up unchanged.
-    # Falls back to the old static '- logout.json' search if the folder is absent.
-    logout_file = None
+    # LOGOUT SEQUENCE FOLDER (Feature 40) — detect folder; build per output folder.
+    # Long break (2h–4.5h) and Short break (30–90min) are generated fresh per
+    # output folder so every folder gets a different random wait duration.
     _logout_folder = None
     for _d in search_base.iterdir():
         if _d.is_dir() and _d.name.lower() == 'logout, wait, in':
@@ -7256,28 +7271,10 @@ def main():
             break
 
     if _logout_folder:
-        print(f"? Found LOGOUT folder: '{_logout_folder.name}'")
-        _lo_rng  = random.Random()  # unseeded — system entropy, different wait every run
-        _lo_dest = Path(args.output_root) / "- logout random break.json"
-        _built   = build_logout_sequence(_logout_folder, _lo_rng, _lo_dest)
-        if _built:
-            logout_file = _built
-        else:
-            print(f"  [!] LOGOUT folder build failed — no logout file this run")
+        print(f"  Found LOGOUT folder: '{_logout_folder.name}'")
+        print(f"  Long break (2h-4.5h) + Short break (30-90min) generated per output folder.")
     else:
-        # Fallback: look for a static logout .json at root level
-        logout_patterns = ["logout.json", "- logout.json", "-logout.json",
-                           "logout", "- logout", "-logout"]
-        for location_dir in [search_base, search_base.parent]:
-            if logout_file:
-                break
-            for pattern in logout_patterns:
-                test_file = location_dir / pattern
-                for test_path in [test_file, Path(str(test_file) + ".json")]:
-                    if test_path.exists() and test_path.is_file():
-                        logout_file = test_path
-                        print(f"? Found logout file: {logout_file.name}")
-                        break
+        print(f"  No LOGOUT folder found -- break files will not be generated.")
 
     print()
 
@@ -7363,7 +7360,10 @@ def main():
             # Parse lines — each line is either "FolderName" or "FolderName: F1, F2"
             # GitHub Actions may collapse newlines; handle commas-as-separators only
             # when there is NO colon present (legacy behaviour).
-            entries = {}   # {folder_name_lower: set_of_subfolder_nums_or_None}
+            # DUPLICATE SUPPORT: entries_list is an ORDERED LIST of (name, sf_filter)
+            # tuples. The same folder name may appear multiple times — each occurrence
+            # produces one independent output folder, suffixed " (2)", " (3)", etc.
+            entries_list = []   # [(folder_name_lower, sf_filter_or_None), ...]
             for raw_line in raw_text.splitlines():
                 line = raw_line.strip()
                 if not line:
@@ -7392,68 +7392,77 @@ def main():
                             single_m = re.match(r'^[Ff]?(\d+(?:\.\d+)?)$', tok)
                             if single_m:
                                 sf_nums.add(float(single_m.group(1)))
-                    entries[folder_key] = sf_nums if sf_nums else None
+                    entries_list.append((folder_key, sf_nums if sf_nums else None))
                 else:
                     # No colon — legacy comma-separated folder names (no subfolder filter)
                     for name in line.replace(',', '\n').splitlines():
                         name = name.strip()
                         if name:
-                            entries[name.lower()] = None  # None = all subfolders
+                            entries_list.append((name.lower(), None))
 
-            if entries:
+            if entries_list:
                 print(f"\n Filtering to specific folders only:")
-                for name, sfs in entries.items():
+                for name, sfs in entries_list:
                     sf_str = f" (subfolders: {sorted(sfs)})" if sfs else " (all subfolders)"
                     print(f"  - {name}{sf_str}")
 
                 filtered_folders = []
-                for folder_data in main_folders:
-                    key = folder_data['name'].lower()
-                    if key in entries:
-                        sf_filter = entries[key]
-                        if sf_filter:
-                            # Keep only the requested numbered subfolders
-                            original_subs = folder_data['subfolders']
-                            filtered_subs = {}
-                            for num, data in original_subs.items():
-                                if round(num, 4) in sf_filter or num == 0:
-                                    # Force-include: strip optional/end so it always runs
-                                    forced = dict(data)
-                                    forced['is_optional']     = False
-                                    forced['is_end']          = False
-                                    forced['is_optional_end'] = False
-                                    filtered_subs[num] = forced
-                            if not filtered_subs:
-                                print(f"  [!] No matching subfolders found in '{folder_data['name']}'")
-                                print(f"      Requested: {sorted(sf_filter)}")
-                                print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
-                                continue
-                            # Clone folder_data with filtered+forced subfolders
-                            filtered_fd = dict(folder_data)
-                            filtered_fd['subfolders'] = filtered_subs
-                            filtered_folders.append(filtered_fd)
-                        else:
-                            filtered_folders.append(folder_data)
+                _name_run_count = {}  # {name_lower: run_count} — tracks duplicates
+
+                for _req_name, _sf_filter in entries_list:
+                    # Find matching folder in scanned main_folders
+                    _matched_fd = None
+                    for _fd in main_folders:
+                        if _fd['name'].lower() == _req_name:
+                            _matched_fd = _fd
+                            break
+                    if _matched_fd is None:
+                        continue  # not found as top-level; caught by subfolder fallback
+
+                    # Assign run suffix for duplicates
+                    _name_run_count[_req_name] = _name_run_count.get(_req_name, 0) + 1
+                    _rsuffix = f" ({_name_run_count[_req_name]})" if _name_run_count[_req_name] > 1 else ""
+
+                    if _sf_filter:
+                        original_subs = _matched_fd['subfolders']
+                        filtered_subs = {}
+                        for num, data in original_subs.items():
+                            if round(num, 4) in _sf_filter or num == 0:
+                                forced = dict(data)
+                                forced['is_optional']     = False
+                                forced['is_end']          = False
+                                forced['is_optional_end'] = False
+                                filtered_subs[num] = forced
+                        if not filtered_subs:
+                            print(f"  [!] No matching subfolders found in '{_matched_fd['name']}'")
+                            print(f"      Requested: {sorted(_sf_filter)}")
+                            print(f"      Available: {sorted(k for k in original_subs if k != 0)}")
+                            continue
+                        filtered_fd = dict(_matched_fd)
+                        filtered_fd['subfolders'] = filtered_subs
+                        filtered_fd['_run_suffix'] = _rsuffix
+                        filtered_folders.append(filtered_fd)
+                    else:
+                        filtered_fd = dict(_matched_fd)
+                        filtered_fd['_run_suffix'] = _rsuffix
+                        filtered_folders.append(filtered_fd)
 
                 if not filtered_folders:
                     # Fallback: search by subfolder name (no colon needed)
-                    # If the written name matches a subfolder folder_name, auto-promote it
+                    _req_names_set = {n for n, _ in entries_list}
                     for folder_data in main_folders:
                         for sf_num, sf_data in folder_data['subfolders'].items():
                             sf_name = sf_data.get('folder_name', '')
-                            if sf_name.lower() in entries:
+                            if sf_name.lower() in _req_names_set:
                                 print(f"  [->] '{sf_name}' matched as subfolder of '{folder_data['name']}'")
-                                # Build a synthetic main_folder from this single subfolder
-                                # Force always-included (strip optional/end tags)
                                 forced_sf = dict(sf_data)
                                 forced_sf['is_optional']     = False
                                 forced_sf['is_end']          = False
                                 forced_sf['is_optional_end'] = False
-                                forced_sf['max_files']       = 1  # ignored — nested handles loops
+                                forced_sf['max_files']       = 1
 
                                 nsf = sf_data.get('nested_subfolder_files')
                                 if nsf:
-                                    # Nested: promote inner structure as top-level
                                     synthetic = {
                                         'path': sf_data.get('folder_path', folder_data['path']),
                                         'name': sf_name,
@@ -7464,7 +7473,6 @@ def main():
                                         'non_json':   folder_data.get('non_json', []),
                                     }
                                 else:
-                                    # Regular subfolder: treat as flat/single-subfolder folder
                                     synthetic = {
                                         'path': sf_data.get('folder_path', folder_data['path']),
                                         'name': sf_name,
@@ -7474,11 +7482,12 @@ def main():
                                         'dmwm_files': folder_data.get('dmwm_files', set()),
                                         'non_json':   folder_data.get('non_json', []),
                                     }
+                                synthetic['_run_suffix'] = ''
                                 filtered_folders.append(synthetic)
 
                 if not filtered_folders:
                     print(f"\n[X] None of the specified folders were found!")
-                    print(f"   Looking for: {list(entries.keys())}")
+                    print(f"   Looking for: {[n for n, _ in entries_list]}")
                     print(f"   Available main folders: {[f['name'] for f in main_folders]}")
                     print(f"   TIP: You can also write a subfolder name directly:")
                     print(f"     F0.5 optional-7- CAM2       <- auto-found inside any main folder")
@@ -7487,6 +7496,9 @@ def main():
                     sys.exit(1)
 
                 main_folders = filtered_folders
+                for _dn, _dc in _name_run_count.items():
+                    if _dc > 1:
+                        print(f"  [dup] '{_dn}' selected {_dc}x -- {_dc} separate output folders")
                 print(f"[OK] Filtered to {len(main_folders)} folder(s)")
             else:
                 print(f"\n[!]?  Specific folders file is empty, processing ALL folders")
@@ -7555,20 +7567,41 @@ def main():
         
         
         # Create output folder - append bundle ID in specific folders mode
+        # _run_suffix (" (2)", " (3)") is set when the same folder is selected
+        # multiple times via the dropdowns, giving each run a distinct output name.
         output_folder_name = cleaned_folder_name
         if args.specific_folders:
-            output_folder_name = f"({args.bundle_id}) {output_folder_name}"
+            _run_suffix = folder_data.get('_run_suffix', '')
+            output_folder_name = f"({args.bundle_id}) {output_folder_name}{_run_suffix}"
         print(f"\n Processing: {output_folder_name}")
         out_folder = bundle_dir / output_folder_name
         out_folder.mkdir(parents=True, exist_ok=True)
         
-        # Copy random-break logout sequence as "@ LOGOUT RANDOM BREAK.json"
-        if logout_file:
-            try:
-                shutil.copy2(logout_file, out_folder / "@ LOGOUT RANDOM BREAK.json")
-                print(f"  ✓ Copied logout random break: @ LOGOUT RANDOM BREAK.json")
-            except Exception as e:
-                print(f"  ? Error copying logout random break: {e}")
+        # Generate LONG BREAK + SHORT BREAK per folder (fresh unseeded RNG each call).
+        # Long:  2h – 4.5h   (7200000–16200000 ms)
+        # Short: 30min – 90min (1800000– 5400000 ms)
+        if _logout_folder:
+            _fl_rng = random.Random()  # unseeded — different per folder and per run
+            _lo_long_p  = Path(args.output_root) / "- logout long break.json"
+            _lo_short_p = Path(args.output_root) / "- logout short break.json"
+            _long_built  = build_logout_sequence(
+                _logout_folder, _fl_rng, _lo_long_p,
+                wait_range_ms=(7200000.0, 16200000.0))
+            _short_built = build_logout_sequence(
+                _logout_folder, _fl_rng, _lo_short_p,
+                wait_range_ms=(1800000.0, 5400000.0))
+            if _long_built:
+                try:
+                    shutil.copy2(_long_built,  out_folder / "@ LOGOUT LONG BREAK.json")
+                    print(f"  Copied: @ LOGOUT LONG BREAK.json")
+                except Exception as _e:
+                    print(f"  [!] Error copying long break: {_e}")
+            if _short_built:
+                try:
+                    shutil.copy2(_short_built, out_folder / "@ LOGOUT SHORT BREAK.json")
+                    print(f"  Copied: @ LOGOUT SHORT BREAK.json")
+                except Exception as _e:
+                    print(f"  [!] Error copying short break: {_e}")
 
         # Copy fixed final logout files from REPO ROOT (one level above input_macros).
         # These two files live at repo root, not inside input_macros/.
