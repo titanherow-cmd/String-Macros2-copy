@@ -27,6 +27,7 @@ on:
           - 'FM+COOK straight spot - TIME SENSITIVE'
           - '55- mMining- alkharid U1T- inz- N- TIME SENSITIVE'
           - 'test'
+          - 'test2'
           
       folder_2:
         description: 'Folder 2'
