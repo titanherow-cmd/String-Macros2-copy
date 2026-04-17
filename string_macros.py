@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.94
+  Current version: v3.18.95
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -328,6 +328,13 @@ STRING MACROS - FEATURE LIST
     The folder is excluded from the main macro scan (not treated as a macro folder).
     Dedicated rng seeded from bundle_id + 31337 — does not affect main rng state.
 
+42. GROUP FOLDER SUPPORT
+    Organizer folders one level below input_macros/ whose children have
+    F-numbered subfolders (but the organizer itself does not) are treated as
+    group folders. Selecting a group name runs all its children individually.
+    Structure: input_macros/GroupName/Macro1, Macro2, ...
+    Special folders (DISTRACTIONS, LOGOUT, combination_history) are never groups.
+
 ===========================================================================
 
 CHANGELOG (recent):
@@ -383,6 +390,13 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.95: GROUP FOLDER support (Feature 42).
+            Organizer folders one level above macros are now fully supported.
+            Structure: input_macros/GroupName/Macro1, Macro2, ...
+            Selecting a group name runs ALL children, each as its own output.
+            Children also remain individually selectable by their own name.
+            Duplicate group selection = independent repeat runs of all children.
+            ALL FOLDERS mode: group children auto-flatten into the scan.
 - v3.18.94: Three fixes:
             1. MANIFEST END-TIME ACCURACY: file "Ends at" timestamps in the
                manifest now reflect the actual play-out time including all
@@ -624,7 +638,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.94"
+VERSION = "v3.18.95"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3426,70 +3440,86 @@ def main():
 
     print()
 
-    # Scan folders
-    main_folders = []
-    for folder in search_base.iterdir():
+    # ── Folder scan — supports GROUP FOLDERS (organizer dirs one level above macros)
+    # Structure: input_macros/GroupName/MacroFolder1, MacroFolder2, ...
+    # Group children auto-flatten into main_folders for ALL FOLDERS mode.
+    # _group_registry maps group_name_lower -> [child_folder_data, ...]
+    # so the filter loop can expand a group name into all its children.
+    main_folders   = []
+    _group_registry = {}   # {group_name_lower: [child_fd, ...]}
+    _SCAN_SKIP = {'distractions', 'logout, wait, in', 'combination_history'}
+
+    def _register_macro_folder(fd, indent=""):
+        """Add fd to main_folders and print its summary line."""
+        main_folders.append(fd)
+        _ns = fd['subfolders']
+        nums = sorted(k for k in _ns if k != 0)
+        print(f"{indent}  Found: {fd['name']}")
+        if nums:
+            print(f"{indent}    Subfolders: {nums}")
+            _sp = []
+            for _n in nums:
+                _fi = _ns.get(_n, {})
+                if _fi.get('is_optional_end'): _sp.append(f"{_n} (optional+end)")
+                elif _fi.get('is_end'):         _sp.append(f"{_n} (end)")
+                elif _fi.get('is_optional'):    _sp.append(f"{_n} (optional)")
+                if _fi.get('is_time_sensitive'): _sp.append(f"{_n} (time-sensitive)")
+            if _sp: print(f"{indent}    Special: {', '.join(_sp)}")
+        if fd.get('dmwm_files'): print(f"{indent}    Unmodified: {len(fd['dmwm_files'])} files")
+        if fd.get('non_json'):   print(f"{indent}    Non-JSON:   {len(fd['non_json'])} files")
+
+    for folder in sorted(search_base.iterdir()):
         if not folder.is_dir():
             continue
-
-        # Skip the DISTRACTIONS source folder - it is not a macro folder,
-        # only the generated output copy goes into the bundle.
-        if folder.name.lower() == 'distractions':
+        if folder.name.lower() in _SCAN_SKIP:
             continue
 
-        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
-        # before the scan loop; should not be treated as a macro folder.
-        if folder.name.lower() == 'logout, wait, in':
-            continue
-        
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
-        
-        # Add dmwm files to the appropriate numbered folder
+
         for dmwm_file in dmwm_file_set:
-            # Try to determine which numbered folder it should belong to
-            # For now, add to a special '0' key or just include in general pool
             if 0 not in numbered_subfolders:
                 numbered_subfolders[0] = []
             numbered_subfolders[0].append(dmwm_file)
-        
+
         if numbered_subfolders:
-            main_folders.append({
-                'path': folder,
-                'name': folder.name,
+            # ── Normal macro folder ──────────────────────────────────────
+            _register_macro_folder({
+                'path':              folder,
+                'name':              folder.name,
                 'root_always_first': root_always_first,
-                'root_always_last': root_always_last,
-                'subfolders': numbered_subfolders,
-                'dmwm_files': dmwm_file_set,
-                'non_json': non_json_files
+                'root_always_last':  root_always_last,
+                'subfolders':        numbered_subfolders,
+                'dmwm_files':        dmwm_file_set,
+                'non_json':          non_json_files,
             })
-            print(f"? Found: {folder.name}")
-            if numbered_subfolders:
-                nums = sorted([k for k in numbered_subfolders.keys() if k != 0])
-                print(f"  Subfolders: {nums}")
-                
-                # Show special folder types
-                special_folders = []
-                for num in nums:
-                    if num in numbered_subfolders:
-                        folder_info = numbered_subfolders[num]
-                        if folder_info.get('is_optional_end'):
-                            special_folders.append(f"{num} (optional+end)")
-                        elif folder_info.get('is_end'):
-                            special_folders.append(f"{num} (end)")
-                        elif folder_info.get('is_optional'):
-                            special_folders.append(f"{num} (optional)")
-                        
-                        # Also mark time_sensitive folders
-                        if folder_info.get('is_time_sensitive'):
-                            special_folders.append(f"{num} (time sensitive)")
-                
-                if special_folders:
-                    print(f"  Special: {', '.join(special_folders)}")
-            if dmwm_file_set:
-                print(f"  Unmodified: {len(dmwm_file_set)} files (added to pool)")
-            if non_json_files:
-                print(f"  Non-JSON: {len(non_json_files)} files")
-    
+        else:
+            # ── Potential GROUP FOLDER — scan one level deeper ─────────────
+            _children = []
+            for _child in sorted(folder.iterdir()):
+                if not _child.is_dir():
+                    continue
+                _cn, _cd, _cnj, _craf, _cral = scan_for_numbered_subfolders(_child)
+                for _df in _cd:
+                    if 0 not in _cn: _cn[0] = []
+                    _cn[0].append(_df)
+                if _cn:
+                    _cfd = {
+                        'path':              _child,
+                        'name':              _child.name,
+                        '_group_name':       folder.name,
+                        'root_always_first': _craf,
+                        'root_always_last':  _cral,
+                        'subfolders':        _cn,
+                        'dmwm_files':        _cd,
+                        'non_json':          _cnj,
+                    }
+                    _children.append(_cfd)
+            if _children:
+                print(f"  [GROUP] '{folder.name}' contains {len(_children)} macro folder(s):")
+                for _cfd in _children:
+                    _register_macro_folder(_cfd, indent="  ")
+                _group_registry[folder.name.lower()] = _children
+
     if not main_folders:
         print("[X] No folders with numbered subfolders found!")
         return
@@ -3558,7 +3588,23 @@ def main():
                 _name_run_count = {}  # {name_lower: run_count} — tracks duplicates
 
                 for _req_name, _sf_filter in entries_list:
-                    # Find matching folder in scanned main_folders
+                    # ── GROUP FOLDER: expand name → all children ────────────────────────
+                    if _req_name in _group_registry:
+                        _name_run_count[_req_name] = _name_run_count.get(_req_name, 0) + 1
+                        _grun = _name_run_count[_req_name]
+                        _gsufx = f" (run {_grun})" if _grun > 1 else ""
+                        print(f"  [group] '{_req_name}' → {len(_group_registry[_req_name])} child folder(s){_gsufx}")
+                        for _gchild in _group_registry[_req_name]:
+                            _gfd = dict(_gchild)
+                            _ck = _gfd['name'].lower()
+                            _name_run_count[_ck] = _name_run_count.get(_ck, 0) + 1
+                            _gfd['_run_suffix'] = (
+                                f" ({_name_run_count[_ck]})" if _name_run_count[_ck] > 1 else ""
+                            )
+                            filtered_folders.append(_gfd)
+                        continue
+
+                    # ── Normal single macro folder ─────────────────────────────────────
                     _matched_fd = None
                     for _fd in main_folders:
                         if _fd['name'].lower() == _req_name:
@@ -3598,7 +3644,15 @@ def main():
                         filtered_folders.append(filtered_fd)
 
                 if not filtered_folders:
-                    # Fallback: search by subfolder name (no colon needed)
+                    # Fallback A: expand any group names
+                    _req_names_set = {n for n, _ in entries_list}
+                    for _gn, _gchildren in _group_registry.items():
+                        if _gn in _req_names_set:
+                            for _gcfd in _gchildren:
+                                _gcfd2 = dict(_gcfd)
+                                _gcfd2['_run_suffix'] = ''
+                                filtered_folders.append(_gcfd2)
+                    # Fallback B: search by subfolder name
                     _req_names_set = {n for n, _ in entries_list}
                     for folder_data in main_folders:
                         for sf_num, sf_data in folder_data['subfolders'].items():
@@ -3937,7 +3991,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.94"
+VERSION = "v3.18.95"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7348,70 +7402,86 @@ def main():
 
     print()
 
-    # Scan folders
-    main_folders = []
-    for folder in search_base.iterdir():
+    # ── Folder scan — supports GROUP FOLDERS (organizer dirs one level above macros)
+    # Structure: input_macros/GroupName/MacroFolder1, MacroFolder2, ...
+    # Group children auto-flatten into main_folders for ALL FOLDERS mode.
+    # _group_registry maps group_name_lower -> [child_folder_data, ...]
+    # so the filter loop can expand a group name into all its children.
+    main_folders   = []
+    _group_registry = {}   # {group_name_lower: [child_fd, ...]}
+    _SCAN_SKIP = {'distractions', 'logout, wait, in', 'combination_history'}
+
+    def _register_macro_folder(fd, indent=""):
+        """Add fd to main_folders and print its summary line."""
+        main_folders.append(fd)
+        _ns = fd['subfolders']
+        nums = sorted(k for k in _ns if k != 0)
+        print(f"{indent}  Found: {fd['name']}")
+        if nums:
+            print(f"{indent}    Subfolders: {nums}")
+            _sp = []
+            for _n in nums:
+                _fi = _ns.get(_n, {})
+                if _fi.get('is_optional_end'): _sp.append(f"{_n} (optional+end)")
+                elif _fi.get('is_end'):         _sp.append(f"{_n} (end)")
+                elif _fi.get('is_optional'):    _sp.append(f"{_n} (optional)")
+                if _fi.get('is_time_sensitive'): _sp.append(f"{_n} (time-sensitive)")
+            if _sp: print(f"{indent}    Special: {', '.join(_sp)}")
+        if fd.get('dmwm_files'): print(f"{indent}    Unmodified: {len(fd['dmwm_files'])} files")
+        if fd.get('non_json'):   print(f"{indent}    Non-JSON:   {len(fd['non_json'])} files")
+
+    for folder in sorted(search_base.iterdir()):
         if not folder.is_dir():
             continue
-
-        # Skip the DISTRACTIONS source folder - it is not a macro folder,
-        # only the generated output copy goes into the bundle.
-        if folder.name.lower() == 'distractions':
+        if folder.name.lower() in _SCAN_SKIP:
             continue
 
-        # Skip the LOGOUT sequence folder — handled by build_logout_sequence()
-        # before the scan loop; should not be treated as a macro folder.
-        if folder.name.lower() == 'logout, wait, in':
-            continue
-        
         numbered_subfolders, dmwm_file_set, non_json_files, root_always_first, root_always_last = scan_for_numbered_subfolders(folder)
-        
-        # Add dmwm files to the appropriate numbered folder
+
         for dmwm_file in dmwm_file_set:
-            # Try to determine which numbered folder it should belong to
-            # For now, add to a special '0' key or just include in general pool
             if 0 not in numbered_subfolders:
                 numbered_subfolders[0] = []
             numbered_subfolders[0].append(dmwm_file)
-        
+
         if numbered_subfolders:
-            main_folders.append({
-                'path': folder,
-                'name': folder.name,
+            # ── Normal macro folder ──────────────────────────────────────
+            _register_macro_folder({
+                'path':              folder,
+                'name':              folder.name,
                 'root_always_first': root_always_first,
-                'root_always_last': root_always_last,
-                'subfolders': numbered_subfolders,
-                'dmwm_files': dmwm_file_set,
-                'non_json': non_json_files
+                'root_always_last':  root_always_last,
+                'subfolders':        numbered_subfolders,
+                'dmwm_files':        dmwm_file_set,
+                'non_json':          non_json_files,
             })
-            print(f"? Found: {folder.name}")
-            if numbered_subfolders:
-                nums = sorted([k for k in numbered_subfolders.keys() if k != 0])
-                print(f"  Subfolders: {nums}")
-                
-                # Show special folder types
-                special_folders = []
-                for num in nums:
-                    if num in numbered_subfolders:
-                        folder_info = numbered_subfolders[num]
-                        if folder_info.get('is_optional_end'):
-                            special_folders.append(f"{num} (optional+end)")
-                        elif folder_info.get('is_end'):
-                            special_folders.append(f"{num} (end)")
-                        elif folder_info.get('is_optional'):
-                            special_folders.append(f"{num} (optional)")
-                        
-                        # Also mark time_sensitive folders
-                        if folder_info.get('is_time_sensitive'):
-                            special_folders.append(f"{num} (time sensitive)")
-                
-                if special_folders:
-                    print(f"  Special: {', '.join(special_folders)}")
-            if dmwm_file_set:
-                print(f"  Unmodified: {len(dmwm_file_set)} files (added to pool)")
-            if non_json_files:
-                print(f"  Non-JSON: {len(non_json_files)} files")
-    
+        else:
+            # ── Potential GROUP FOLDER — scan one level deeper ─────────────
+            _children = []
+            for _child in sorted(folder.iterdir()):
+                if not _child.is_dir():
+                    continue
+                _cn, _cd, _cnj, _craf, _cral = scan_for_numbered_subfolders(_child)
+                for _df in _cd:
+                    if 0 not in _cn: _cn[0] = []
+                    _cn[0].append(_df)
+                if _cn:
+                    _cfd = {
+                        'path':              _child,
+                        'name':              _child.name,
+                        '_group_name':       folder.name,
+                        'root_always_first': _craf,
+                        'root_always_last':  _cral,
+                        'subfolders':        _cn,
+                        'dmwm_files':        _cd,
+                        'non_json':          _cnj,
+                    }
+                    _children.append(_cfd)
+            if _children:
+                print(f"  [GROUP] '{folder.name}' contains {len(_children)} macro folder(s):")
+                for _cfd in _children:
+                    _register_macro_folder(_cfd, indent="  ")
+                _group_registry[folder.name.lower()] = _children
+
     if not main_folders:
         print("[X] No folders with numbered subfolders found!")
         return
@@ -7480,7 +7550,23 @@ def main():
                 _name_run_count = {}  # {name_lower: run_count} — tracks duplicates
 
                 for _req_name, _sf_filter in entries_list:
-                    # Find matching folder in scanned main_folders
+                    # ── GROUP FOLDER: expand name → all children ────────────────────────
+                    if _req_name in _group_registry:
+                        _name_run_count[_req_name] = _name_run_count.get(_req_name, 0) + 1
+                        _grun = _name_run_count[_req_name]
+                        _gsufx = f" (run {_grun})" if _grun > 1 else ""
+                        print(f"  [group] '{_req_name}' → {len(_group_registry[_req_name])} child folder(s){_gsufx}")
+                        for _gchild in _group_registry[_req_name]:
+                            _gfd = dict(_gchild)
+                            _ck = _gfd['name'].lower()
+                            _name_run_count[_ck] = _name_run_count.get(_ck, 0) + 1
+                            _gfd['_run_suffix'] = (
+                                f" ({_name_run_count[_ck]})" if _name_run_count[_ck] > 1 else ""
+                            )
+                            filtered_folders.append(_gfd)
+                        continue
+
+                    # ── Normal single macro folder ─────────────────────────────────────
                     _matched_fd = None
                     for _fd in main_folders:
                         if _fd['name'].lower() == _req_name:
@@ -7520,7 +7606,15 @@ def main():
                         filtered_folders.append(filtered_fd)
 
                 if not filtered_folders:
-                    # Fallback: search by subfolder name (no colon needed)
+                    # Fallback A: expand any group names
+                    _req_names_set = {n for n, _ in entries_list}
+                    for _gn, _gchildren in _group_registry.items():
+                        if _gn in _req_names_set:
+                            for _gcfd in _gchildren:
+                                _gcfd2 = dict(_gcfd)
+                                _gcfd2['_run_suffix'] = ''
+                                filtered_folders.append(_gcfd2)
+                    # Fallback B: search by subfolder name
                     _req_names_set = {n for n, _ in entries_list}
                     for folder_data in main_folders:
                         for sf_num, sf_data in folder_data['subfolders'].items():
