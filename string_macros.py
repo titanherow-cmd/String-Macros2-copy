@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.93
+  Current version: v3.18.94
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -383,6 +383,30 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.94: Three fixes:
+            1. MANIFEST END-TIME ACCURACY: file "Ends at" timestamps in the
+               manifest now reflect the actual play-out time including all
+               features that shift event times (within-file pause + mid-event
+               pause). Previously, end times were captured inside string_cycle()
+               BEFORE apply_cycle_features ran, so they were stale by however
+               much pause was added later in the cycle.
+               FIX: insert_intra_file_pauses() now returns a 3-tuple
+               (events, pause_duration, pivot_raw_time). apply_cycle_features()
+               collects pause_pivots = [(raw_pivot_t, amount)] for both the
+               intra-file pause and the mid-event pause. In main(), before
+               recording actual_end_time, each file end time is corrected by
+               summing amounts for all pivots whose raw_t <= file's raw end.
+               Jitter and idle do not shift event times (only insert new ones)
+               and are correctly excluded from pivot tracking.
+            2. OVERLAP / JITTER / CLICK INTEGRITY verified (no new code bug
+               found beyond Part B fix in v3.18.92/93). Confirmed:
+               - Jitter exclusion zone (±1000ms) covers all click types.
+               - Intra pause and mid-event pause both exclude press events
+                 and rapid-click protected ranges.
+               - Inter-cycle transition MM at t=DragEnd_time is safe (button
+                 released, then cursor departs — correct sequence order).
+            3. DUPLICATE FOLDER clarity: shallow-copy on non-sf-filter path
+               now documented; _run_suffix is isolated per copy.
 - v3.18.93: Two new features:
             1. DUPLICATE FOLDER SUPPORT: selecting the same folder in multiple
                dropdown slots now produces one independent output folder per
@@ -600,7 +624,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.93"
+VERSION = "v3.18.94"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1209,12 +1233,12 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
     Returns (events_with_pause, total_pause_time_ms).
     """
     if not events or len(events) < 5:
-        return events, 0
+        return events, 0, float('inf')
 
     # Raw = 0%, Normal = random in [2%, 5%], Inef = random in [10%, 15%]
     # Drawn fresh each call — decimal, never rounded (e.g. 2.14%, 3.87%, 11.6%)
     if file_type == 'raw':
-        return events, 0
+        return events, 0, float('inf')
     elif file_type == 'inef':
         pct = rng.uniform(0.10, 0.15)
     else:  # normal
@@ -1225,7 +1249,7 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     file_duration_ms = events[-1].get('Time', 0) - events[0].get('Time', 0)
     if file_duration_ms <= 0:
-        return events, 0
+        return events, 0, float('inf')
 
     # Float ms - no rounding
     pause_duration = file_duration_ms * pct
@@ -1252,13 +1276,14 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
     ]
 
     if not valid:
-        return events, 0
+        return events, 0, float('inf')
 
     pause_idx = rng.choice(valid)
+    _pivot_raw_t = float(events[pause_idx].get('Time', 0))  # raw time before shift
     for j in range(pause_idx, len(events)):
         events[j]['Time'] = events[j].get('Time', 0) + pause_duration
 
-    return events, pause_duration
+    return events, pause_duration, _pivot_raw_t
 def insert_idle_mouse_movements(events, rng, movement_percentage):
     """
     Insert realistic human-like mouse movements during idle periods (gaps > 2 seconds).
@@ -2505,7 +2530,8 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         'total_moves': 0,
         'jitter_percentage': 0.0,
         'intra_pauses': 0,
-        'idle_movements': 0
+        'idle_movements': 0,
+        'pause_pivots': [],  # [(raw_pivot_time, amount)] for manifest correction
     }
 
     if has_dmwm:
@@ -2523,13 +2549,20 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
     # Step 2: Rapid click detection
     protected_ranges = detect_rapid_click_sequences(events_with_jitter)
 
+    # pause_pivots: list of (raw_pivot_time, amount) for manifest end-time correction.
+    # Only time-shifting features (intra pause, mid-event pause) contribute entries.
+    # Jitter and idle only INSERT events — they never shift existing event times.
+    _pause_pivots = []
+
     # Step 3: Within-file pause (percentage-based, range chosen per call)
     #   Raw: 0%   Normal: 2-5%   Inefficient: 10-15%
     file_type = 'raw' if is_raw else ('inef' if is_inef else 'normal')
-    events_with_pauses, pause_time = insert_intra_file_pauses(
+    events_with_pauses, pause_time, _intra_pivot_t = insert_intra_file_pauses(
         events_with_jitter, rng, protected_ranges, file_type=file_type
     )
     stats['intra_pauses'] = pause_time
+    if pause_time > 0:
+        _pause_pivots.append((_intra_pivot_t, float(pause_time)))
 
     # Step 3b: Multiplier-driven random mid-event pause (50% chance per cycle)
     # The multiplier can express itself as a short natural hesitation inserted
@@ -2554,9 +2587,19 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         ]
         if _valid:
             _ins = rng.choice(_valid)
+            # Capture mid-event pivot in raw (pre-all-shifts) space.
+            # events_with_pauses[_ins].Time is in post-intra-pause space.
+            # Un-shift to raw space if the intra pause already moved this point.
+            _mid_t_shifted = float(events_with_pauses[_ins].get('Time', 0))
+            _mid_pivot_raw = (
+                _mid_t_shifted - pause_time
+                if (pause_time > 0 and _mid_t_shifted >= _intra_pivot_t + pause_time)
+                else _mid_t_shifted
+            )
             for _j in range(_ins, len(events_with_pauses)):
                 events_with_pauses[_j]['Time'] = events_with_pauses[_j].get('Time', 0) + _mid_ms
             stats['intra_pauses'] += _mid_ms
+            _pause_pivots.append((_mid_pivot_raw, float(_mid_ms)))
 
     # Step 4: Idle movements - SKIPPED for click-sensitive folders
     if not is_click_sensitive:
@@ -2567,6 +2610,9 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         stats['idle_movements'] = idle_time
     else:
         events_with_idle = events_with_pauses
+
+    # Expose pause pivot data for manifest end-time accuracy correction
+    stats['pause_pivots'] = _pause_pivots
 
     return events_with_idle, stats
 
@@ -3545,6 +3591,8 @@ def main():
                         filtered_fd['_run_suffix'] = _rsuffix
                         filtered_folders.append(filtered_fd)
                     else:
+                        # Shallow-copy folder_data so each duplicate run has its own
+                        # _run_suffix without sharing it with other runs of the same folder.
                         filtered_fd = dict(_matched_fd)
                         filtered_fd['_run_suffix'] = _rsuffix
                         filtered_folders.append(filtered_fd)
@@ -3889,7 +3937,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.93"
+VERSION = "v3.18.94"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5116,12 +5164,12 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
     Returns (events_with_pause, total_pause_time_ms).
     """
     if not events or len(events) < 5:
-        return events, 0
+        return events, 0, float('inf')
 
     # Raw = 0%, Normal = random in [2%, 5%], Inef = random in [10%, 15%]
     # Drawn fresh each call — decimal, never rounded (e.g. 2.14%, 3.87%, 11.6%)
     if file_type == 'raw':
-        return events, 0
+        return events, 0, float('inf')
     elif file_type == 'inef':
         pct = rng.uniform(0.10, 0.15)
     else:  # normal
@@ -5132,7 +5180,7 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
 
     file_duration_ms = events[-1].get('Time', 0) - events[0].get('Time', 0)
     if file_duration_ms <= 0:
-        return events, 0
+        return events, 0, float('inf')
 
     # Float ms - no rounding
     pause_duration = file_duration_ms * pct
@@ -5159,13 +5207,14 @@ def insert_intra_file_pauses(events: list, rng: random.Random,
     ]
 
     if not valid:
-        return events, 0
+        return events, 0, float('inf')
 
     pause_idx = rng.choice(valid)
+    _pivot_raw_t = float(events[pause_idx].get('Time', 0))  # raw time before shift
     for j in range(pause_idx, len(events)):
         events[j]['Time'] = events[j].get('Time', 0) + pause_duration
 
-    return events, pause_duration
+    return events, pause_duration, _pivot_raw_t
 def insert_idle_mouse_movements(events, rng, movement_percentage):
     """
     Insert realistic human-like mouse movements during idle periods (gaps > 2 seconds).
@@ -6403,7 +6452,8 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         'total_moves': 0,
         'jitter_percentage': 0.0,
         'intra_pauses': 0,
-        'idle_movements': 0
+        'idle_movements': 0,
+        'pause_pivots': [],  # [(raw_pivot_time, amount)] for manifest correction
     }
 
     if has_dmwm:
@@ -6421,13 +6471,20 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
     # Step 2: Rapid click detection
     protected_ranges = detect_rapid_click_sequences(events_with_jitter)
 
+    # pause_pivots: list of (raw_pivot_time, amount) for manifest end-time correction.
+    # Only time-shifting features (intra pause, mid-event pause) contribute entries.
+    # Jitter and idle only INSERT events — they never shift existing event times.
+    _pause_pivots = []
+
     # Step 3: Within-file pause (percentage-based, range chosen per call)
     #   Raw: 0%   Normal: 2-5%   Inefficient: 10-15%
     file_type = 'raw' if is_raw else ('inef' if is_inef else 'normal')
-    events_with_pauses, pause_time = insert_intra_file_pauses(
+    events_with_pauses, pause_time, _intra_pivot_t = insert_intra_file_pauses(
         events_with_jitter, rng, protected_ranges, file_type=file_type
     )
     stats['intra_pauses'] = pause_time
+    if pause_time > 0:
+        _pause_pivots.append((_intra_pivot_t, float(pause_time)))
 
     # Step 3b: Multiplier-driven random mid-event pause (50% chance per cycle)
     # The multiplier can express itself as a short natural hesitation inserted
@@ -6452,9 +6509,19 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         ]
         if _valid:
             _ins = rng.choice(_valid)
+            # Capture mid-event pivot in raw (pre-all-shifts) space.
+            # events_with_pauses[_ins].Time is in post-intra-pause space.
+            # Un-shift to raw space if the intra pause already moved this point.
+            _mid_t_shifted = float(events_with_pauses[_ins].get('Time', 0))
+            _mid_pivot_raw = (
+                _mid_t_shifted - pause_time
+                if (pause_time > 0 and _mid_t_shifted >= _intra_pivot_t + pause_time)
+                else _mid_t_shifted
+            )
             for _j in range(_ins, len(events_with_pauses)):
                 events_with_pauses[_j]['Time'] = events_with_pauses[_j].get('Time', 0) + _mid_ms
             stats['intra_pauses'] += _mid_ms
+            _pause_pivots.append((_mid_pivot_raw, float(_mid_ms)))
 
     # Step 4: Idle movements - SKIPPED for click-sensitive folders
     if not is_click_sensitive:
@@ -6465,6 +6532,9 @@ def apply_cycle_features(cycle_events, rng, is_raw, has_dmwm, is_inef=False,
         stats['idle_movements'] = idle_time
     else:
         events_with_idle = events_with_pauses
+
+    # Expose pause pivot data for manifest end-time accuracy correction
+    stats['pause_pivots'] = _pause_pivots
 
     return events_with_idle, stats
 
@@ -7443,6 +7513,8 @@ def main():
                         filtered_fd['_run_suffix'] = _rsuffix
                         filtered_folders.append(filtered_fd)
                     else:
+                        # Shallow-copy folder_data so each duplicate run has its own
+                        # _run_suffix without sharing it with other runs of the same folder.
                         filtered_fd = dict(_matched_fd)
                         filtered_fd['_run_suffix'] = _rsuffix
                         filtered_folders.append(filtered_fd)
@@ -8063,11 +8135,16 @@ def main():
                     new_event['Time'] = e['Time'] + offset
                     stringed_events.append(new_event)
                 
-                # Track file info with cumulative timeline
-                # file_info now includes end time within cycle
+                # Track file info with cumulative timeline.
+                # Correct end times for pauses added by apply_cycle_features:
+                # each pause_pivot (raw_t, amount) shifts all files whose raw end
+                # time >= raw_t forward by amount. Both pivots are in cycle-raw space.
+                _pp = stats.get('pause_pivots', [])
                 for folder_num, filename, is_dmwm, end_time_in_cycle in file_info:
-                    # Add offset to get actual end time in merged events
-                    actual_end_time = end_time_in_cycle + offset
+                    _corr = end_time_in_cycle + sum(
+                        _pa for _pt, _pa in _pp if _pt <= end_time_in_cycle
+                    )
+                    actual_end_time = _corr + offset
                     all_file_info_with_times.append((folder_num, filename, is_dmwm, actual_end_time))
                 
                 # Update stats
