@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.96
+  Current version: v3.18.97
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -390,6 +390,19 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.97: Fix group folder detection for plain-numbered children (Feature 42 bugfix 2).
+            Root cause: _has_f_subfolders only matched the strict "F+digit" prefix
+            pattern. Group children named "1- withdraw", "2- use" (no F prefix)
+            were not detected, so _looks_like_group returned False for organizers
+            like "6- smithing files" → fell through to normal scan → merged 61 and
+            62 into one output instead of two separate folders.
+            Fix: replace single heuristic with two-condition check:
+              1. Parent has NO direct F+digit children (if it does, it is a normal
+                 macro folder, not a group — catches FM+COOK, 22- Craft Dia, etc.).
+              2. At least one direct child has numbered subdirectories (F+digit OR
+                 plain digit prefix — catches "1- withdraw" style naming).
+            This correctly identifies: Test/ → group, 6-smithing/ → group,
+            FM+COOK/ → macro, 22- Craft Dia/ → macro.
 - v3.18.96: Fix group folder detection (Feature 42 bugfix).
             Root cause: scan_for_numbered_subfolders extracts any digit from
             a directory name as a subfolder number (fallback regex). Folders
@@ -652,7 +665,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.96"
+VERSION = "v3.18.97"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3482,39 +3495,64 @@ def main():
         if fd.get('dmwm_files'): print(f"{indent}    Unmodified: {len(fd['dmwm_files'])} files")
         if fd.get('non_json'):   print(f"{indent}    Non-JSON:   {len(fd['non_json'])} files")
 
-    def _has_f_subfolders(d, depth=1):
-        """Return True if directory d contains (within `depth` levels) any
-        sub-directory whose name starts with F+digit (e.g. F1-, F2, F3.5-).
-        depth=1 checks d's direct children; depth=2 also checks grandchildren.
-        Used to distinguish true F-subfolder trees from organizer group folders.
+    def _has_f_prefix_subdir(d):
+        """Return True if directory d has any DIRECT child dir starting with
+        the explicit F+digit pattern (F1-, F2, F3.5, etc.).
+        Used for condition-1 of _looks_like_group: if the candidate folder
+        already has F-prefix direct children it is a normal macro folder.
         """
+        _re = re.compile(r'(?i)^[Ff]\d')
         try:
             for _it in d.iterdir():
-                if not _it.is_dir(): continue
-                if re.match(r'(?i)^[Ff]\d', _it.name):
+                if _it.is_dir() and _re.match(_it.name):
                     return True
-                if depth > 1 and _has_f_subfolders(_it, depth - 1):
+        except (PermissionError, OSError):
+            pass
+        return False
+
+    def _has_numbered_subdir(d):
+        """Return True if directory d has any DIRECT child dir whose name starts
+        with a digit (with or without F prefix: F1-, 1-, F3.5, 3.5-optional...).
+        Matches the same number-detection logic as scan_for_numbered_subfolders.
+        Used for condition-2 of _looks_like_group: at least one child of the
+        candidate folder contains numbered subdirs → that child is a macro folder.
+        """
+        _re = re.compile(r'^[Ff]?\d')
+        try:
+            for _it in d.iterdir():
+                if _it.is_dir() and _re.match(_it.name):
                     return True
         except (PermissionError, OSError):
             pass
         return False
 
     def _looks_like_group(folder):
-        """Return True if folder is an organizer group: its direct children each
-        contain F-prefixed sub-directories (making each child a macro folder).
-        At least one child must satisfy this to qualify as a group.
-        Checked BEFORE scan_for_numbered_subfolders so that child dirs whose
-        names happen to contain digits are not mis-extracted as F-subfolders.
-        Also handles one extra level of nesting (e.g. child/container/F1-...).
+        """Return True if folder is an organizer group folder.
+
+        Two-condition heuristic (both must hold):
+          1. folder has NO direct F+digit children.
+             If it does, it is a normal macro folder (e.g. FM+COOK has F1-, F2-).
+          2. At least one direct child of folder CONTAINS numbered subdirectories
+             (F-prefix or plain-digit prefix).
+             This makes the child itself a macro folder inside a group.
+
+        Examples:
+          6- smithing files/ : no F-children (✓), 61-smth-var HAS 1-,2- (✓) → GROUP
+          Test/              : no F-children (✓), test1 HAS F1-,F2- (✓) → GROUP
+          FM+COOK/           : HAS F1-,F2- direct children (✗) → MACRO
+          22- Craft Dia/     : HAS F1-,F2- direct children (✗) → MACRO
+
+        Must run BEFORE scan_for_numbered_subfolders so that child dirs whose
+        names contain digits are never mis-extracted as F-subfolders.
         """
+        # Condition 1: parent must have NO direct F+digit children
+        if _has_f_prefix_subdir(folder):
+            return False
+        # Condition 2: at least one direct child must contain numbered subdirs
         try:
             for _ch in folder.iterdir():
                 if not _ch.is_dir(): continue
-                # child has direct F-prefixed sub-directories → it's a macro folder
-                if _has_f_subfolders(_ch, depth=1):
-                    return True
-                # child might have one extra container level (child/container/F1-...)
-                if _has_f_subfolders(_ch, depth=2):
+                if _has_numbered_subdir(_ch):
                     return True
         except (PermissionError, OSError):
             pass
@@ -3522,7 +3560,7 @@ def main():
 
     def _scan_as_macro(folder, group_name=None):
         """Run scan_for_numbered_subfolders on folder. If the scan returns empty
-        but the folder has children with F-subfolders one level deeper (the
+        but the folder has children with numbered subdirs one level deeper (the
         child/container/F1 pattern), scan those intermediate containers too.
         Returns a valid folder_data dict or None.
         """
@@ -3534,7 +3572,7 @@ def main():
             # Try one level deeper: child/container/F1-... pattern
             for _sub in sorted(folder.iterdir()):
                 if not _sub.is_dir(): continue
-                if _has_f_subfolders(_sub, depth=1):
+                if _has_numbered_subdir(_sub):
                     _sn, _sd, _snj, _sraf, _sral = scan_for_numbered_subfolders(_sub)
                     for _df in _sd:
                         if 0 not in _sn: _sn[0] = []
@@ -4076,7 +4114,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.96"
+VERSION = "v3.18.97"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7515,39 +7553,64 @@ def main():
         if fd.get('dmwm_files'): print(f"{indent}    Unmodified: {len(fd['dmwm_files'])} files")
         if fd.get('non_json'):   print(f"{indent}    Non-JSON:   {len(fd['non_json'])} files")
 
-    def _has_f_subfolders(d, depth=1):
-        """Return True if directory d contains (within `depth` levels) any
-        sub-directory whose name starts with F+digit (e.g. F1-, F2, F3.5-).
-        depth=1 checks d's direct children; depth=2 also checks grandchildren.
-        Used to distinguish true F-subfolder trees from organizer group folders.
+    def _has_f_prefix_subdir(d):
+        """Return True if directory d has any DIRECT child dir starting with
+        the explicit F+digit pattern (F1-, F2, F3.5, etc.).
+        Used for condition-1 of _looks_like_group: if the candidate folder
+        already has F-prefix direct children it is a normal macro folder.
         """
+        _re = re.compile(r'(?i)^[Ff]\d')
         try:
             for _it in d.iterdir():
-                if not _it.is_dir(): continue
-                if re.match(r'(?i)^[Ff]\d', _it.name):
+                if _it.is_dir() and _re.match(_it.name):
                     return True
-                if depth > 1 and _has_f_subfolders(_it, depth - 1):
+        except (PermissionError, OSError):
+            pass
+        return False
+
+    def _has_numbered_subdir(d):
+        """Return True if directory d has any DIRECT child dir whose name starts
+        with a digit (with or without F prefix: F1-, 1-, F3.5, 3.5-optional...).
+        Matches the same number-detection logic as scan_for_numbered_subfolders.
+        Used for condition-2 of _looks_like_group: at least one child of the
+        candidate folder contains numbered subdirs → that child is a macro folder.
+        """
+        _re = re.compile(r'^[Ff]?\d')
+        try:
+            for _it in d.iterdir():
+                if _it.is_dir() and _re.match(_it.name):
                     return True
         except (PermissionError, OSError):
             pass
         return False
 
     def _looks_like_group(folder):
-        """Return True if folder is an organizer group: its direct children each
-        contain F-prefixed sub-directories (making each child a macro folder).
-        At least one child must satisfy this to qualify as a group.
-        Checked BEFORE scan_for_numbered_subfolders so that child dirs whose
-        names happen to contain digits are not mis-extracted as F-subfolders.
-        Also handles one extra level of nesting (e.g. child/container/F1-...).
+        """Return True if folder is an organizer group folder.
+
+        Two-condition heuristic (both must hold):
+          1. folder has NO direct F+digit children.
+             If it does, it is a normal macro folder (e.g. FM+COOK has F1-, F2-).
+          2. At least one direct child of folder CONTAINS numbered subdirectories
+             (F-prefix or plain-digit prefix).
+             This makes the child itself a macro folder inside a group.
+
+        Examples:
+          6- smithing files/ : no F-children (✓), 61-smth-var HAS 1-,2- (✓) → GROUP
+          Test/              : no F-children (✓), test1 HAS F1-,F2- (✓) → GROUP
+          FM+COOK/           : HAS F1-,F2- direct children (✗) → MACRO
+          22- Craft Dia/     : HAS F1-,F2- direct children (✗) → MACRO
+
+        Must run BEFORE scan_for_numbered_subfolders so that child dirs whose
+        names contain digits are never mis-extracted as F-subfolders.
         """
+        # Condition 1: parent must have NO direct F+digit children
+        if _has_f_prefix_subdir(folder):
+            return False
+        # Condition 2: at least one direct child must contain numbered subdirs
         try:
             for _ch in folder.iterdir():
                 if not _ch.is_dir(): continue
-                # child has direct F-prefixed sub-directories → it's a macro folder
-                if _has_f_subfolders(_ch, depth=1):
-                    return True
-                # child might have one extra container level (child/container/F1-...)
-                if _has_f_subfolders(_ch, depth=2):
+                if _has_numbered_subdir(_ch):
                     return True
         except (PermissionError, OSError):
             pass
@@ -7555,7 +7618,7 @@ def main():
 
     def _scan_as_macro(folder, group_name=None):
         """Run scan_for_numbered_subfolders on folder. If the scan returns empty
-        but the folder has children with F-subfolders one level deeper (the
+        but the folder has children with numbered subdirs one level deeper (the
         child/container/F1 pattern), scan those intermediate containers too.
         Returns a valid folder_data dict or None.
         """
@@ -7567,7 +7630,7 @@ def main():
             # Try one level deeper: child/container/F1-... pattern
             for _sub in sorted(folder.iterdir()):
                 if not _sub.is_dir(): continue
-                if _has_f_subfolders(_sub, depth=1):
+                if _has_numbered_subdir(_sub):
                     _sn, _sd, _snj, _sraf, _sral = scan_for_numbered_subfolders(_sub)
                     for _df in _sd:
                         if 0 not in _sn: _sn[0] = []
