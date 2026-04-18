@@ -26,8 +26,11 @@ on:
           - 'FM straight spot- TIME SENSITIVE'
           - 'FM+COOK straight spot - TIME SENSITIVE'
           - '55- mMining- alkharid U1T- inz- N- TIME SENSITIVE'
-          - 'Test'
-          - 'test2'
+          - '60- Smth R2H only- Varr- zoomanvil left- W'
+          - '61- Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '62- Smth Only+Smth R2H+NotedAlch- Varr- zoomanvil left- W'
+          - '6- Smithing files'
+          - 'x'
           
       folder_2:
         description: 'Folder 2'
