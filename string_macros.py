@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.97
+  Current version: v3.18.98
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -390,6 +390,30 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.18.98: Fix click-target accuracy at cycle boundaries (click-tile misfire fix).
+            ROOT CAUSE: The inter-cycle cursor transition (between cycle N end and
+            cycle N+1 start) used [:-1] to skip the path's final destination point,
+            but never added an explicit SNAP to the exact target position. This left
+            the cursor at the penultimate path waypoint — close but not exactly on
+            the click target. For raw/normal files with a 500-800ms gap and ~5 path
+            steps, the cursor could be 60-120ms and several pixels away from the
+            target tile when the DragStart fires → click registers on adjacent tile.
+            The WITHIN-cycle transition (between F1→F2 files) already had a correct
+            explicit snap + 80-150ms POST-SNAP GAP. That pattern was missing from
+            the between-cycle path.
+            FIX A — raw/normal inter-cycle: after the path waypoints, add an explicit
+            snap MouseMove at (_ic_first_x, _ic_first_y) timestamped at
+            _ic_base + _cycle_gap - _IC_SNAP_ADVANCE (where _IC_SNAP_ADVANCE is a
+            flat 50ms buffer so the snap lands safely before the new cycle starts).
+            FIX B — inef inter-cycle drift: same snap pattern, timestamped at
+            _trans_base + inter_cycle_pause - _IC_SNAP_ADVANCE, so the cursor
+            settles on the target well before the cycle offset.
+            FIX C — generate_human_path: remove 'swift' from transition style pool.
+            Swift uses linear constant-speed movement with zero deceleration near
+            the target, maximising the gap between penultimate and final points.
+            It is kept in distraction files (via _add_mouse_wander etc.) where
+            precision does not matter. Transition paths now use only efficient,
+            meandering, and hesitant — all of which decelerate near the end.
 - v3.18.97: Fix group folder detection for plain-numbered children (Feature 42 bugfix 2).
             Root cause: _has_f_subfolders only matched the strict "F+digit" prefix
             pattern. Group children named "1- withdraw", "2- use" (no F prefix)
@@ -665,7 +689,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.97"
+VERSION = "v3.18.98"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -875,7 +899,11 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         return [(0, end_x, end_y)]
     
     # Choose path style (determines curvature and speed pattern)
-    path_style = rng.choice(['efficient', 'meandering', 'hesitant', 'swift'])
+    # 'swift' removed from transition style pool (v3.18.98):
+    # swift uses linear constant-speed motion with no deceleration near the
+    # target, leaving the cursor furthest from the destination at the penultimate
+    # waypoint. This maximised click-position error before the snap fix.
+    path_style = rng.choice(['efficient', 'meandering', 'hesitant'])
     
     # Determine num_steps based on distance and path style
     if path_style == 'efficient':
@@ -4114,7 +4142,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.97"
+VERSION = "v3.18.98"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4942,7 +4970,11 @@ def generate_human_path(start_x, start_y, end_x, end_y, duration_ms, rng):
         return [(0, end_x, end_y)]
     
     # Choose path style (determines curvature and speed pattern)
-    path_style = rng.choice(['efficient', 'meandering', 'hesitant', 'swift'])
+    # 'swift' removed from transition style pool (v3.18.98):
+    # swift uses linear constant-speed motion with no deceleration near the
+    # target, leaving the cursor furthest from the destination at the penultimate
+    # waypoint. This maximised click-position error before the snap fix.
+    path_style = rng.choice(['efficient', 'meandering', 'hesitant'])
     
     # Determine num_steps based on distance and path style
     if path_style == 'efficient':
@@ -8382,13 +8414,23 @@ def main():
                                 _ic_last_x, _ic_last_y, _ic_first_x, _ic_first_y,
                                 int(_cycle_gap), rng
                             )
+                            _IC_SNAP_ADVANCE = 50  # ms: snap lands this far before cycle start
                             for _rt, _px, _py in _ic_path[:-1]:
-                                if _rt < int(_cycle_gap):
+                                if _rt < int(_cycle_gap) - _IC_SNAP_ADVANCE:
                                     stringed_events.append({
                                         'Type': 'MouseMove',
                                         'Time': _ic_base + _rt,
                                         'X': _px, 'Y': _py
                                     })
+                            # SNAP: explicit final position so cursor is exactly
+                            # on the click target before the new cycle begins.
+                            # Mirrors the within-cycle snap in add_file_to_cycle.
+                            stringed_events.append({
+                                'Type': 'MouseMove',
+                                'Time': _ic_base + int(_cycle_gap) - _IC_SNAP_ADVANCE,
+                                'X': _ic_first_x,
+                                'Y': _ic_first_y
+                            })
                             total_transitions += int(_cycle_gap)
 
                 if stringed_events and is_inef:
@@ -8423,18 +8465,28 @@ def main():
 
                     if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
                         _trans_base = current_duration  # FIX: anchor at cycle boundary, not after idle events
+                        _INEF_SNAP_ADVANCE = 200  # ms: snap well before cycle start (inef gap is 10-30s)
                         transition_path = generate_human_path(
                             last_x, last_y, first_x, first_y,
                             inter_cycle_pause, rng
                         )
                         for rel_time, x, y in transition_path[:-1]:
-                            if rel_time < inter_cycle_pause:
+                            if rel_time < inter_cycle_pause - _INEF_SNAP_ADVANCE:
                                 stringed_events.append({
                                     'Type': 'MouseMove',
                                     'Time': _trans_base + rel_time,
                                     'X': x,
                                     'Y': y
                                 })
+                        # SNAP: cursor settles exactly on the next cycle's first
+                        # click target 200ms before the new cycle begins.
+                        if inter_cycle_pause > _INEF_SNAP_ADVANCE:
+                            stringed_events.append({
+                                'Type': 'MouseMove',
+                                'Time': _trans_base + inter_cycle_pause - _INEF_SNAP_ADVANCE,
+                                'X': first_x,
+                                'Y': first_y
+                            })
                 
                 potential_total = current_duration + inter_cycle_pause + cycle_duration
                 margin = int(_effective_target * 0.05)
