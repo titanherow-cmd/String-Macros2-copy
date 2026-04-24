@@ -1,0 +1,85 @@
+=== BUNDLE 420 COMBINATION HISTORY ===
+
+[60- Smth R2H only- Varr- zoomanvil left- W]
+F1=B1w (21).json|F2=CTTAA (1).json|F3=CASR (8).json|F4=CBD (13).json
+F1=B1w (88).json|F2=CTTAA (28).json|F3=CASR (13).json|F4=CBD (14).json|F5=FMF Smithonly (13).json
+F1=B1w (24).json|F2=CTTAA (13).json|F3=CASR (15).json|F4=CBD (23).json|F5=FMF Smithonly (20).json
+F1=B1w (23).json|F2=CTTAA (31).json|F3=CASR (18).json|F4=CBD (25).json
+F1=B1w (99).json|F2=CTTAA (7).json|F3=CASR (23).json|F4=CBD (8).json
+F1=B1w (3).json|F2=CTTAA (42).json|F3=CASR (32).json|F4=CBD (27).json
+F1=B1w (80).json|F2=CTTAA (11).json|F3=CASR (24).json|F4=CBD (33).json|F5=FMF Smithonly (6).json
+F1=B1w (17).json|F2=CTTAA (20).json|F3=CASR (7).json|F4=CBD (35).json
+F1=B1w (69).json|F2=CTTAA (29).json|F3=CASR (29).json|F4=CBD (37).json
+F1=B1w (84).json|F2=CTTAA (9).json|F3=CASR (3).json|F4=CBD (19).json|F5=FMF Smithonly (9).json
+F1=B1w (11).json|F2=CTTAA (14).json|F3=CASR (9).json|F4=CBD (1).json
+F1=B1w (18).json|F2=CTTAA (12).json|F3=CASR (19).json|F4=CBD (44).json
+F1=B1w (79).json|F2=CTTAA (41).json|F3=CASR (21).json|F4=CBD (30).json
+F1=B1w (27).json|F2=CTTAA (8).json|F3=CASR (2).json|F4=CBD (17).json
+F1=B1w (45).json|F2=CTTAA (10).json|F3=CASR (30).json|F4=CBD (9).json
+F1=B1w (71).json|F2=CTTAA (16).json|F3=CASR (26).json|F4=CBD (12).json
+F1=B1w (108).json|F2=CTTAA (30).json|F3=CASR (22).json|F4=CBD (15).json
+F1=B1w (61).json|F2=CTTAA (2).json|F3=CASR (20).json|F4=CBD (34).json
+F1=B1w (77).json|F2=CTTAA (4).json|F3=CASR (16).json|F4=CBD (32).json
+F1=B1w (48).json|F2=CTTAA (3).json|F3=CASR (11).json|F4=CBD (10).json
+F1=B1w (20).json|F2=CTTAA (38).json|F3=CASR (17).json|F4=CBD (41).json|F5=FMF Smithonly (3).json
+F1=B1w (75).json|F2=CTTAA (17).json|F3=CASR (4).json|F4=CBD (39).json|F5=FMF Smithonly (8).json
+F1=B1w (76).json|F2=CTTAA (6).json|F3=CASR (12).json|F4=CBD (18).json|F5=FMF Smithonly (7).json
+F1=B1w (15).json|F2=CTTAA (39).json|F3=CASR (31).json|F4=CBD (22).json|F5=FMF Smithonly (2).json
+F1=B1w (4).json|F2=CTTAA (36).json|F3=CASR (1).json|F4=CBD (42).json
+F1=B1w (22).json|F2=CTTAA (21).json|F3=CASR (27).json|F4=CBD (6).json
+F1=B1w (5).json|F2=CTTAA (5).json|F3=CASR (10).json|F4=CBD (28).json
+F1=B1w (90).json|F2=CTTAA (41).json|F3=CASR (5).json|F4=CBD (40).json|F5=FMF Smithonly (19).json
+F1=B1w (114).json|F2=CTTAA (38).json|F3=CASR (6).json|F4=CBD (38).json|F5=FMF Smithonly (17).json
+F1=B1w (38).json|F2=CTTAA (8).json|F3=CASR (28).json|F4=CBD (4).json|F5=FMF Smithonly (21).json
+F1=B1w (35).json|F2=CTTAA (16).json|F3=CASR (33).json|F4=CBD (16).json
+F1=B1w (43).json|F2=CTTAA (12).json|F3=CASR (25).json|F4=CBD (2).json
+F1=B1w (52).json|F2=CTTAA (39).json|F3=CASR (14).json|F4=CBD (3).json
+F1=B1w (101).json|F2=CTTAA (29).json|F3=CASR (19).json|F4=CBD (21).json
+F1=B1w (26).json|F2=CTTAA (5).json|F3=CASR (12).json|F4=CBD (11).json
+F1=B1w (46).json|F2=CTTAA (14).json|F3=CASR (1).json|F4=CBD (26).json
+F1=B1w (54).json|F2=CTTAA (42).json|F3=CASR (8).json|F4=CBD (24).json
+F1=B1w (42).json|F2=CTTAA (21).json|F3=CASR (6).json|F4=CBD (20).json
+F1=B1w (92).json|F2=CTTAA (28).json|F3=CASR (23).json|F4=CBD (31).json|F5=FMF Smithonly (11).json
+F1=B1w (28).json|F2=CTTAA (6).json|F3=CASR (2).json|F4=CBD (36).json|F5=FMF Smithonly (14).json
+F1=B1w (82).json|F2=CTTAA (17).json|F3=CASR (25).json|F4=CBD (43).json
+F1=B1w (87).json|F2=CTTAA (30).json|F3=CASR (11).json|F4=CBD (29).json|F5=FMF Smithonly (22).json
+F1=B1w (55).json|F2=CTTAA (2).json|F3=CASR (20).json|F4=CBD (5).json
+F1=B1w (62).json|F2=CTTAA (11).json|F3=CASR (16).json|F4=CBD (7).json
+F1=B1w (78).json|F2=CTTAA (4).json|F3=CASR (27).json|F4=CBD (11).json
+F1=B1w (97).json|F2=CTTAA (1).json|F3=CASR (21).json|F4=CBD (38).json
+F1=B1w (53).json|F2=CTTAA (7).json|F3=CASR (33).json|F4=CBD (41).json
+F1=B1w (91).json|F2=CTTAA (36).json|F3=CASR (24).json|F4=CBD (32).json
+F1=B1w (102).json|F2=CTTAA (31).json|F3=CASR (15).json|F4=CBD (14).json
+F1=B1w (70).json|F2=CTTAA (9).json|F3=CASR (31).json|F4=CBD (2).json
+F1=B1w (104).json|F2=CTTAA (10).json|F3=CASR (32).json|F4=CBD (20).json
+F1=B1w (31).json|F2=CTTAA (20).json|F3=CASR (30).json|F4=CBD (28).json
+F1=B1w (14).json|F2=CTTAA (13).json|F3=CASR (28).json|F4=CBD (36).json
+F1=B1w (57).json|F2=CTTAA (3).json|F3=CASR (3).json|F4=CBD (21).json
+F1=B1w (86).json|F2=CTTAA (41).json|F3=CASR (14).json|F4=CBD (31).json
+F1=B1w (107).json|F2=CTTAA (13).json|F3=CASR (5).json|F4=CBD (1).json|F5=FMF Smithonly (10).json
+F1=B1w (2).json|F2=CTTAA (20).json|F3=CASR (29).json|F4=CBD (3).json|F5=FMF Smithonly (5).json
+F1=B1w (30).json|F2=CTTAA (21).json|F3=CASR (13).json|F4=CBD (15).json
+F1=B1w (49).json|F2=CTTAA (4).json|F3=CASR (18).json|F4=CBD (27).json
+F1=B1w (36).json|F2=CTTAA (31).json|F3=CASR (26).json|F4=CBD (25).json|F5=FMF Smithonly (1).json
+F1=B1w (7).json|F2=CTTAA (10).json|F3=CASR (17).json|F4=CBD (8).json
+F1=B1w (105).json|F2=CTTAA (38).json|F3=CASR (22).json|F4=CBD (5).json
+F1=B1w (19).json|F2=CTTAA (12).json|F3=CASR (10).json|F4=CBD (22).json
+F1=B1w (94).json|F2=CTTAA (11).json|F3=CASR (7).json|F4=CBD (35).json|F5=FMF Smithonly (18).json
+F1=B1w (10).json|F2=CTTAA (7).json|F3=CASR (4).json|F4=CBD (33).json|F5=FMF Smithonly (16).json
+F1=B1w (67).json|F2=CTTAA (36).json|F3=CASR (9).json|F4=CBD (16).json
+F1=B1w (113).json|F2=CTTAA (6).json|F3=CASR (26).json|F4=CBD (7).json
+F1=B1w (98).json|F2=CTTAA (17).json|F3=CASR (18).json|F4=CBD (17).json
+F1=B1w (6).json|F2=CTTAA (14).json|F3=CASR (1).json|F4=CBD (6).json|F5=FMF Smithonly (15).json
+F1=B1w (64).json|F2=CTTAA (30).json|F3=CASR (27).json|F4=CBD (26).json
+F1=B1w (93).json|F2=CTTAA (39).json|F3=CASR (21).json|F4=CBD (44).json
+F1=B1w (112).json|F2=CTTAA (3).json|F3=CASR (19).json|F4=CBD (24).json|F5=FMF Smithonly (4).json
+F1=B1w (51).json|F2=CTTAA (29).json|F3=CASR (29).json|F4=CBD (9).json
+F1=B1w (68).json|F2=CTTAA (2).json|F3=CASR (8).json|F4=CBD (23).json
+F1=B1w (47).json|F2=CTTAA (16).json|F3=CASR (14).json|F4=CBD (29).json
+F1=B1w (111).json|F2=CTTAA (8).json|F3=CASR (32).json|F4=CBD (40).json
+F1=B1w (106).json|F2=CTTAA (9).json|F3=CASR (16).json|F4=CBD (30).json
+F1=B1w (34).json|F2=CTTAA (42).json|F3=CASR (30).json|F4=CBD (43).json
+F1=B1w (110).json|F2=CTTAA (1).json|F3=CASR (6).json|F4=CBD (34).json|F5=FMF Smithonly (12).json
+F1=B1w (100).json|F2=CTTAA (28).json|F3=CASR (25).json|F4=CBD (4).json|F5=FMF Smithonly (17).json
+F1=B1w (1).json|F2=CTTAA (5).json|F3=CASR (9).json|F4=CBD (18).json
+
