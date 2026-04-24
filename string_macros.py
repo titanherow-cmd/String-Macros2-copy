@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.18.99
+  Current version: v3.19.01
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -194,8 +194,9 @@ STRING MACROS - FEATURE LIST
     - Output folder: (bundle_id) folder_name
 
 27. CHAT INSERTS
-    --no-chat disables. One chat file spliced into one non-raw version
-    per folder batch at a random point in the middle third.
+    --no-chat disables. After all versions are saved, floor(total * 0.20)
+    files are chosen at random (all types eligible, including raw) and one
+    chat file is spliced into each. 10 files → 2; 22 → 4; 5 → 1; 4 → 0.
 
 28. PRE-PLAY BUFFER GUARANTEE
     files_added int counter (not list truthiness) ensures buffer fires before
@@ -390,6 +391,19 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.01: Chat insert reworked — post-loop, all file types eligible.
+            After ALL versions are saved for a folder, collect every strung
+            .json file, pick floor(total * 0.20) at random (raw included),
+            and splice one random chat file into each via read→insert→write-back.
+- v3.19.00: Chat insert rate changed from 1 fixed file per batch to exactly
+            floor(versions * 0.20) files per batch (20%, rounded down).
+            Examples: 10 versions → 2 chat files; 22 versions → 4 chat files;
+            5 versions → 1 chat file; 4 versions → 0 chat files.
+            chat_version_idx (single int) replaced by chat_version_indices (set)
+            built by rng.sample() from the non-raw version pool so selections
+            are always unique. Each selected version gets a different random
+            chat file (drawn independently). Splice check updated to
+            `if v_idx in chat_version_indices`. Display + docstrings updated.
 - v3.18.99: 5-slot logout sequence (0-close → 1-logout → 2-wait → 3-relogin → 4-open).
             build_logout_sequence() now detects two extra optional slots:
               slot 0: file whose name contains 'close' or starts with '0-'
@@ -700,7 +714,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.99"
+VERSION = "v3.19.01"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3450,7 +3464,7 @@ def main():
     print(f"Bundle ID: {args.bundle_id}")
     print(f"Target: {args.target_minutes} minutes per file")
     print(f"Versions: {args.versions} total (3 Raw + 3 Inef + 6 Normal)")
-    print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (50% chance)'}")
+    print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (20% of files, post-save)'}")
     print("="*70)
     
     # Setup
@@ -4182,7 +4196,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.18.99"
+VERSION = "v3.19.01"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7541,7 +7555,7 @@ def main():
     print(f"Bundle ID: {args.bundle_id}")
     print(f"Target: {args.target_minutes} minutes per file")
     print(f"Versions: {args.versions} total (3 Raw + 3 Inef + 6 Normal)")
-    print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (50% chance)'}")
+    print(f"Chat: {'DISABLED' if args.no_chat else 'ENABLED (20% of files, post-save)'}")
     print("="*70)
     
     # Setup
@@ -8268,18 +8282,7 @@ def main():
                 num_inef = max(1, args.versions - num_raw - num_normal)
             print(f"   File distribution: {num_raw} Raw + {num_inef} Inef + {num_normal} Normal ({num_raw}:{num_inef}:{num_normal} ratio, target 2:3:7)")
         
-        # CHAT INSERT: pick exactly 1 non-raw version per folder batch to receive
-        # a single chat file inserted at a random midpoint in the finished strung file.
-        # Raw files never get chat (they carry no added features).
-        chat_version_idx = None
-        chat_file_for_version = None
-        if chat_files and not args.no_chat:
-            non_raw_indices = list(range(num_raw, args.versions))
-            if non_raw_indices:
-                chat_version_idx = rng.choice(non_raw_indices)
-                chat_file_for_version = rng.choice(chat_files)
-                cv_letter = get_version_letter(chat_version_idx)
-                print(f"   Chat insert: version {cv_letter} will receive 1 chat ({chat_file_for_version.name})")
+        # CHAT INSERT applied post-save (see post-loop block below the version loop).
         
         for v_idx in range(args.versions):
             v_letter = get_version_letter(v_idx)
@@ -8695,57 +8698,12 @@ def main():
                     e['Time'] = max(0, int(round(e['Time'])))
             stringed_events = sorted(stringed_events, key=lambda e: e.get('Time', 0))
             
-            # CHAT INSERT: splice one chat file into the chosen version
-            chat_inserted = False
-            if v_idx == chat_version_idx and chat_file_for_version and not is_raw:
-                try:
-                    with open(chat_file_for_version, 'r', encoding='utf-8') as cf:
-                        chat_events = json.load(cf)
-                    if chat_events:
-                        # Normalise chat event times to start at 0
-                        chat_base = min(e.get('Time', 0) for e in chat_events)
-                        chat_duration = max(e.get('Time', 0) for e in chat_events) - chat_base
-                        
-                        # Pick a random insertion point in the middle third of the file
-                        if len(stringed_events) >= 6:
-                            lo = len(stringed_events) // 3
-                            hi = (2 * len(stringed_events)) // 3
-                            insert_idx = rng.randint(lo, hi)
-                        else:
-                            insert_idx = len(stringed_events) // 2
-                        
-                        insert_time = stringed_events[insert_idx]['Time']
-                        
-                        # Shift all events after insertion point forward by chat duration
-                        for e in stringed_events[insert_idx:]:
-                            e['Time'] += chat_duration
-                        
-                        # Build chat events at insert_time
-                        chat_splice = []
-                        for e in chat_events:
-                            ne = {**e}
-                            ne['Time'] = insert_time + (e.get('Time', 0) - chat_base)
-                            chat_splice.append(ne)
-                        
-                        # Splice in and re-sort
-                        stringed_events = (
-                            stringed_events[:insert_idx] +
-                            chat_splice +
-                            stringed_events[insert_idx:]
-                        )
-                        stringed_events = sorted(stringed_events, key=lambda e: e.get('Time', 0))
-                        chat_inserted = True
-                        print(f"      Chat inserted: {chat_file_for_version.name} at ~{insert_time//60000}m{(insert_time%60000)//1000}s")
-                except Exception as chat_err:
-                    print(f"     [!]?  Chat insert failed: {chat_err}")
-            
             # Save file
             (out_folder / fname).write_text(json.dumps(stringed_events, separators=(',', ':')))
             
             # DEBUG: Show created file
             type_label = "RAW" if is_raw else ("INEF" if is_inef else "NORM")
-            chat_tag = " +CHAT" if chat_inserted else ""
-            print(f"     ? Created: {fname:<30s} [{type_label}{chat_tag}]")
+            print(f"     ? Created: {fname:<30s} [{type_label}]")
             
             # Build manifest entry
             separator = "=" * 40
@@ -8797,6 +8755,51 @@ def main():
             
             manifest_lines.extend(manifest_entry)
         
+        # ── POST-LOOP CHAT INSERT ─────────────────────────────────────────
+        # All strung .json files are now saved. Pick floor(total * 0.20) at
+        # random — all file types eligible — and splice one chat file into each.
+        if chat_files and not args.no_chat:
+            _strung = sorted(
+                p for p in out_folder.iterdir()
+                if p.suffix == '.json'
+                and not p.name.startswith('!')
+                and not p.name.startswith('@')
+                and not p.name.startswith('-')
+            )
+            _n_chat = int(len(_strung) * 0.20)  # floor(20%)
+            if _n_chat > 0:
+                _targets = rng.sample(_strung, _n_chat)
+                print(f"   Chat inserts: {_n_chat}/{len(_strung)} file(s) selected")
+                for _ct in _targets:
+                    try:
+                        _cevs = json.loads(_ct.read_text(encoding='utf-8'))
+                        _csrc = rng.choice(chat_files)
+                        _rchat = json.loads(_csrc.read_text(encoding='utf-8'))
+                        if not _cevs or not _rchat:
+                            continue
+                        _cb = min(e.get('Time', 0) for e in _rchat)
+                        _cdur = max(e.get('Time', 0) for e in _rchat) - _cb
+                        if len(_cevs) >= 6:
+                            _ins = rng.randint(len(_cevs) // 3, (2 * len(_cevs)) // 3)
+                        else:
+                            _ins = len(_cevs) // 2
+                        _it = _cevs[_ins]['Time']
+                        for _e in _cevs[_ins:]:
+                            _e['Time'] += _cdur
+                        _merged = sorted(
+                            _cevs[:_ins]
+                            + [{**_e, 'Time': _it + (_e.get('Time', 0) - _cb)} for _e in _rchat]
+                            + _cevs[_ins:],
+                            key=lambda _e: _e.get('Time', 0)
+                        )
+                        _ct.write_text(json.dumps(_merged, separators=(',', ':')))
+                        print(f"     +CHAT {_ct.name} <- {_csrc.name}"
+                              f" at ~{_it//60000}m{(_it%60000)//1000}s")
+                    except Exception as _ce:
+                        print(f"     [!] Chat insert failed ({_ct.name}): {_ce}")
+            else:
+                print(f"   Chat: 0 inserts ({len(_strung)} file(s), floor(20%)=0)")
+
         # Write manifest
         manifest_path = out_folder / f"!_MANIFEST_{folder_number}_!.txt"
         manifest_path.write_text("\n".join(manifest_lines), encoding="utf-8")
