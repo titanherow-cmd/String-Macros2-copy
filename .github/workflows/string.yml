@@ -148,7 +148,7 @@ on:
         required: true
         default: '60'
       enable_chat:
-        description: 'Enable chat inserts (50% of files)'
+        description: 'Enable chat inserts (20% of files)'
         required: false
         default: false
         type: boolean
