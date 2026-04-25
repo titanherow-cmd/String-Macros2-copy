@@ -1,0 +1,82 @@
+[
+  {
+    "Type": "KeyUp",
+    "Time": 145,
+    "X": null,
+    "Y": null,
+    "Delta": null,
+    "KeyCode": 35
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 174,
+    "X": 679,
+    "Y": 975,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 61392,
+    "X": 679,
+    "Y": 971,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 61456,
+    "X": 679,
+    "Y": 975,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81402,
+    "X": 679,
+    "Y": 971,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81418,
+    "X": 679,
+    "Y": 967,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81450,
+    "X": 679,
+    "Y": 971,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81458,
+    "X": 679,
+    "Y": 975,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81506,
+    "X": 679,
+    "Y": 971,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 81594,
+    "X": 679,
+    "Y": 967,
+    "Delta": null,
+    "KeyCode": null
+  }
+]
