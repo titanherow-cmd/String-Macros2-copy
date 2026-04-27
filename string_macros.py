@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.19.01
+  Current version: v3.19.02
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -233,11 +233,13 @@ STRING MACROS - FEATURE LIST
 
 35. INTRA-FILE ZERO-GAP PROTECTION
     On load: two checks, both shift all events from the click forward.
-    Part A — MouseMove->DragStart/Click gap < 15ms shifted to 20ms.
+    Part A — MouseMove->ButtonDown gap < 15ms shifted to 20ms.
     Prevents recording-tool artifacts causing button clamp.
-    Part B — DragEnd->DragStart gap < 150ms shifted to 200ms.
-    Prevents too-fast re-press sequences where the macro player cannot
-    distinguish a genuine release+re-click from a single held drag.
+    Part B — DragEnd->DragStart gap < 200ms shifted to 200ms.
+    Prevents rapid DragStart re-press. Threshold raised 150→200ms v3.18.92.
+    Part C (v3.19.02) — any button-event->button-down gap < 200ms shifted
+    to 200ms. Catches LeftUp→LeftDown, DragEnd→LeftDown, LD→LD (missing
+    release), and all cross-type rapid re-press cases missed by A and B.
     Applied before any other features, to raw events only.
 
 36. ORIGINAL FILES DEDUPLICATION
@@ -391,6 +393,11 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.02: Part C zero-gap protection — any button-down after button event.
+            Parts A and B left gaps: LeftUp→LeftDown, DragEnd→LeftDown,
+            LeftUp→DragStart, RightUp→RightDown, ButtonDown→ButtonDown.
+            All < 200ms button-event→button-down gaps shifted to 200ms min.
+            DragEnd→DragStart skipped in Part C (already handled by Part B).
 - v3.19.01: Chat insert reworked — post-loop, all file types eligible.
             After ALL versions are saved for a folder, collect every strung
             .json file, pick floor(total * 0.20) at random (raw included),
@@ -714,7 +721,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.01"
+VERSION = "v3.19.02"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1864,6 +1871,32 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
                     _shift = _DRAG_REPRESS_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
+        # Part C (v3.19.02): any button-event -> button-down gap < 200ms.
+        # Catches cross-type rapid re-press patterns missed by A and B:
+        #   LeftUp  -> LeftDown   (rapid double-click via LD/LU events)
+        #   RightUp -> RightDown  (rapid right-click)
+        #   DragEnd -> LeftDown   (cross-type re-press)
+        #   LeftUp  -> DragStart  (cross-type re-press)
+        #   ButtonDown -> ButtonDown (missing release = permanent hold risk)
+        # DragEnd->DragStart is skipped — handled by Part B above.
+        #   Threshold: 200ms  |  Target: 200ms
+        _BUTTON_DOWN_TYPES = {'DragStart', 'LeftDown', 'RightDown'}
+        _BUTTON_ANY_TYPES  = {'DragStart', 'DragEnd', 'LeftDown', 'LeftUp',
+                               'RightDown', 'RightUp', 'MouseDown', 'MouseUp'}
+        _PART_C_THRESHOLD  = 200
+        _PART_C_TARGET     = 200
+        for _zi in range(1, len(events)):
+            _cur = events[_zi].get('Type')
+            _prv = events[_zi - 1].get('Type')
+            if _prv == 'DragEnd' and _cur == 'DragStart':
+                continue  # Part B already handled this
+            if _cur in _BUTTON_DOWN_TYPES and _prv in _BUTTON_ANY_TYPES:
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _PART_C_THRESHOLD:
+                    _shift = _PART_C_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
@@ -4196,7 +4229,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.01"
+VERSION = "v3.19.02"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5955,6 +5988,32 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
                 if 0 <= _gap < _DRAG_REPRESS_THRESHOLD:
                     _shift = _DRAG_REPRESS_TARGET - _gap
+                    for _j in range(_zi, len(events)):
+                        events[_j]['Time'] = events[_j].get('Time', 0) + _shift
+
+        # Part C (v3.19.02): any button-event -> button-down gap < 200ms.
+        # Catches cross-type rapid re-press patterns missed by A and B:
+        #   LeftUp  -> LeftDown   (rapid double-click via LD/LU events)
+        #   RightUp -> RightDown  (rapid right-click)
+        #   DragEnd -> LeftDown   (cross-type re-press)
+        #   LeftUp  -> DragStart  (cross-type re-press)
+        #   ButtonDown -> ButtonDown (missing release = permanent hold risk)
+        # DragEnd->DragStart is skipped — handled by Part B above.
+        #   Threshold: 200ms  |  Target: 200ms
+        _BUTTON_DOWN_TYPES = {'DragStart', 'LeftDown', 'RightDown'}
+        _BUTTON_ANY_TYPES  = {'DragStart', 'DragEnd', 'LeftDown', 'LeftUp',
+                               'RightDown', 'RightUp', 'MouseDown', 'MouseUp'}
+        _PART_C_THRESHOLD  = 200
+        _PART_C_TARGET     = 200
+        for _zi in range(1, len(events)):
+            _cur = events[_zi].get('Type')
+            _prv = events[_zi - 1].get('Type')
+            if _prv == 'DragEnd' and _cur == 'DragStart':
+                continue  # Part B already handled this
+            if _cur in _BUTTON_DOWN_TYPES and _prv in _BUTTON_ANY_TYPES:
+                _gap = events[_zi].get('Time', 0) - events[_zi - 1].get('Time', 0)
+                if 0 <= _gap < _PART_C_THRESHOLD:
+                    _shift = _PART_C_TARGET - _gap
                     for _j in range(_zi, len(events)):
                         events[_j]['Time'] = events[_j].get('Time', 0) + _shift
 
