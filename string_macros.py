@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.19.02
+  Current version: v3.19.03
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -393,6 +393,18 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.03: Fix inef manifest "Ends at" times off by massive pause duration.
+            ROOT CAUSE: The split_time used to decide which file end-times need
+            correction was read AFTER insert_massive_pause already shifted it
+            forward by massive_pause_ms. So split_time = pre_split + pause_ms,
+            meaning ALL actual file end-times (which are pre-shift values) were
+            less than split_time → zero files corrected → every "Ends at" in an
+            inef manifest was wrong by exactly the massive pause duration (~4-7min
+            x mult, typically 8-21 minutes for a 2x multiplier).
+            FIX: capture split_time_pre_shift before calling insert_massive_pause
+            by reading stringed_events[split_idx]['Time'] on the returned split_idx
+            then subtracting massive_pause_ms to recover the pre-shift value.
+            Condition changed from > to >= (the split point event itself shifts).
 - v3.19.02: Part C zero-gap protection — any button-down after button event.
             Parts A and B left gaps: LeftUp→LeftDown, DragEnd→LeftDown,
             LeftUp→DragStart, RightUp→RightDown, ButtonDown→ButtonDown.
@@ -721,7 +733,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.02"
+VERSION = "v3.19.03"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -4229,7 +4241,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.02"
+VERSION = "v3.19.03"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -8713,22 +8725,29 @@ def main():
             if is_inef and len(stringed_events) > 1:
                 stringed_events, massive_pause_ms, split_idx = insert_massive_pause(stringed_events, rng)  # mult not applied
                 
-                # FIX: Update file end times that occur after the massive pause
-                if massive_pause_ms > 0 and split_idx > 0 and split_idx < len(stringed_events):
-                    # Find the timestamp of the split point
-                    split_time = stringed_events[split_idx]['Time']
-                    
-                    # Update all file end times that occur after the split
+                # FIX (v3.19.03): Correct file end-times after massive pause.
+                # CRITICAL: read split_time BEFORE the shift by recovering the
+                # pre-shift timestamp: events[split_idx].Time is now post-shift,
+                # so subtract massive_pause_ms to get the original split point.
+                # The old code used the post-shift split_time directly, so every
+                # file end-time (pre-shift values) compared as less-than the
+                # inflated split_time and received zero correction.
+                if massive_pause_ms > 0 and 0 <= split_idx < len(stringed_events):
+                    split_time_pre_shift = (
+                        stringed_events[split_idx]['Time'] - massive_pause_ms
+                    )
                     updated_file_info = []
                     for folder_num, filename, is_dmwm, end_time in all_file_info_with_times:
-                        if end_time > split_time:
-                            # File ends after the pause - shift its end time
-                            updated_end_time = end_time + massive_pause_ms
-                            updated_file_info.append((folder_num, filename, is_dmwm, updated_end_time))
+                        if end_time >= split_time_pre_shift:
+                            # File ends at or after the split → shift forward
+                            updated_file_info.append(
+                                (folder_num, filename, is_dmwm, end_time + massive_pause_ms)
+                            )
                         else:
-                            # File ends before the pause - keep original time
-                            updated_file_info.append((folder_num, filename, is_dmwm, end_time))
-                    
+                            # File ends before the split → unaffected
+                            updated_file_info.append(
+                                (folder_num, filename, is_dmwm, end_time)
+                            )
                     all_file_info_with_times = updated_file_info
             
             # Calculate total duration
