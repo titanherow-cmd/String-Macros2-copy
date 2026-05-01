@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.19.03
+  Current version: v3.19.04
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -393,6 +393,23 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.04: Two bugs fixed:
+            BUG 1 — Double always-last for flat folders.
+            Root cause: scan_for_numbered_subfolders populates the synthetic
+            numbered_folders[1.0] flat entry BEFORE the root-level always_last
+            scan runs. The root scan fires (if numbered_folders is truthy),
+            finds the same always_last files, and puts them in root_always_last
+            too. In main(), both the subfolder pool AND root_always_last are
+            played → two always_last files per output.
+            FIX: _is_flat_scan flag detects when numbered_folders contains only
+            the synthetic 1.0 key with no real F-prefixed subdirs. Root scan
+            gated as `if numbered_folders and not _is_flat_scan`.
+            BUG 2 — Manifest "Ends at" times ignored chat insert duration.
+            Chat files (post-loop splice) can add 30s-10min to chosen files.
+            all_file_info_with_times was NOT updated after chat splice, so
+            manifest showed pre-chat end times.
+            FIX: after each successful chat splice, update all_file_info_with_times
+            entries whose filename matches the spliced file by adding _cdur.
 - v3.19.03: Fix inef manifest "Ends at" times off by massive pause duration.
             ROOT CAUSE: The split_time used to decide which file end-times need
             correction was read AFTER insert_massive_pause already shifted it
@@ -733,7 +750,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.03"
+VERSION = "v3.19.04"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -3019,7 +3036,17 @@ def scan_for_numbered_subfolders(base_path):
     # not per cycle, not per subfolder. Separate from subfolder-level always tags.
     root_always_first = []
     root_always_last  = []
-    if numbered_folders:  # only meaningful when there are actual subfolders
+    # Gate: skip root scan if this is a flat-folder (synthetic key 1.0 only).
+    # Flat folders store always_last in subfolder 1.0's pool; running the root
+    # scan too would put the same files into root_always_last, causing a double play.
+    _is_flat_scan = (
+        set(numbered_folders.keys()) == {1.0}
+        and not any(
+            re.match(r'(?i)^[Ff]?\d', d.name)
+            for d in base.iterdir() if d.is_dir()
+        )
+    ) if numbered_folders else False
+    if numbered_folders and not _is_flat_scan:
         for _rf in sorted(base.glob('*.json')):
             _name = _rf.name.lower()
             if 'always first' in _name or 'alwaysfirst' in _name:
@@ -4241,7 +4268,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.03"
+VERSION = "v3.19.04"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -7136,7 +7163,17 @@ def scan_for_numbered_subfolders(base_path):
     # not per cycle, not per subfolder. Separate from subfolder-level always tags.
     root_always_first = []
     root_always_last  = []
-    if numbered_folders:  # only meaningful when there are actual subfolders
+    # Gate: skip root scan if this is a flat-folder (synthetic key 1.0 only).
+    # Flat folders store always_last in subfolder 1.0's pool; running the root
+    # scan too would put the same files into root_always_last, causing a double play.
+    _is_flat_scan = (
+        set(numbered_folders.keys()) == {1.0}
+        and not any(
+            re.match(r'(?i)^[Ff]?\d', d.name)
+            for d in base.iterdir() if d.is_dir()
+        )
+    ) if numbered_folders else False
+    if numbered_folders and not _is_flat_scan:
         for _rf in sorted(base.glob('*.json')):
             _name = _rf.name.lower()
             if 'always first' in _name or 'alwaysfirst' in _name:
@@ -8873,6 +8910,15 @@ def main():
                         _ct.write_text(json.dumps(_merged, separators=(',', ':')))
                         print(f"     +CHAT {_ct.name} <- {_csrc.name}"
                               f" at ~{_it//60000}m{(_it%60000)//1000}s")
+                        # Update manifest end-times for this file:
+                        # any all_file_info entry whose name contains this file's
+                        # stem gets its end time extended by the chat duration.
+                        _ct_name = _ct.name
+                        all_file_info_with_times = [
+                            (fn, fnm, idm,
+                             et + _cdur if _ct_name in fnm else et)
+                            for fn, fnm, idm, et in all_file_info_with_times
+                        ]
                     except Exception as _ce:
                         print(f"     [!] Chat insert failed ({_ct.name}): {_ce}")
             else:
