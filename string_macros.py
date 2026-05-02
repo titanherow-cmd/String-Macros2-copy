@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.19.04
+  Current version: v3.19.05
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -393,6 +393,23 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.05: Per-subfolder click/time sensitivity.
+            ROOT CAUSE: folder_is_click_sensitive was computed as
+            `any(fd.get("is_click_sensitive") for fd in subfolder_files.values())`.
+            If ANY subfolder (e.g. F6) was click-sensitive, the whole cycle was
+            flagged click-sensitive, suppressing jitter/idle/transitions for ALL
+            subfolders including F1-F5 and F7-F8 which are normal.
+            FIX A: folder_is_click_sensitive now only reflects the MAIN FOLDER
+            name tag (used for whole-cycle apply_cycle_features). It no longer
+            escalates from per-subfolder tags.
+            FIX B: add_file_to_cycle gains a slot_is_click_sensitive parameter.
+            When playing files for a click-sensitive subfolder slot, transitions
+            TO that slot are suppressed. apply_cycle_features (jitter, idle,
+            mid-event pause) still runs on the whole cycle via the main-folder
+            flag, which is now False unless the main folder itself is tagged.
+            FIX C: per-slot time-sensitivity treated the same way — the inef/raw
+            file-type selection per slot respects subfolder is_time_sensitive
+            via get_sequence, unchanged. This was already correct.
 - v3.19.04: Two bugs fixed:
             BUG 1 — Double always-last for flat folders.
             Root cause: scan_for_numbered_subfolders populates the synthetic
@@ -750,7 +767,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.04"
+VERSION = "v3.19.05"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1835,8 +1852,12 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     is_click_sensitive: if True, skip cursor pathing between files (no coord changes).
     """
     
-    def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
-        """Helper to add a file to the cycle"""
+    def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label,
+                          slot_is_click_sensitive=False):
+        """Helper to add a file to the cycle.
+        slot_is_click_sensitive: suppresses cursor transition TO this file.
+        The whole-cycle flag (is_click_sensitive) controls apply_cycle_features.
+        """
         nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
         
         # Load events
@@ -1962,9 +1983,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     break
             
             
-            # CURSOR TRANSITION: skipped for click-sensitive folders
-            # (no coordinate changes between files - cursor stays wherever it was)
-            if not is_click_sensitive:
+            # CURSOR TRANSITION: skipped if THIS slot or the whole cycle is click-sensitive.
+            # slot_is_click_sensitive: transition TO this specific subfolder is suppressed.
+            # is_click_sensitive: whole-cycle flag (main folder name tag).
+            if not is_click_sensitive and not slot_is_click_sensitive:
                 transition_duration = rng.uniform(200.0, 400.0) * mult
                 if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
                     transition_path = generate_human_path(
@@ -2113,17 +2135,22 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
+            # slot_cs: True if this specific subfolder is click-sensitive (per-slot flag).
+            _slot_cs = folder_data.get('is_click_sensitive', False)
             af = _pick_af_al(folder_data.get('always_first', []), rng)
             al = _pick_af_al(folder_data.get('always_last',  []), rng)
             if af:
                 is_dmwm = af in dmwm_file_set
-                add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
+                add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}",
+                                  slot_is_click_sensitive=_slot_cs)
             for item in _regular_items:
                 is_dmwm = item in dmwm_file_set
-                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name,
+                                  slot_is_click_sensitive=_slot_cs)
             if al:
                 is_dmwm = al in dmwm_file_set
-                add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
+                add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}",
+                                  slot_is_click_sensitive=_slot_cs)
 
     # DISTRACTION: maybe insert AFTER the very last folder
     if combination:
@@ -4268,7 +4295,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.04"
+VERSION = "v3.19.05"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -5962,8 +5989,12 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
     is_click_sensitive: if True, skip cursor pathing between files (no coord changes).
     """
     
-    def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label):
-        """Helper to add a file to the cycle"""
+    def add_file_to_cycle(file_path, folder_num, is_dmwm, file_label,
+                          slot_is_click_sensitive=False):
+        """Helper to add a file to the cycle.
+        slot_is_click_sensitive: suppresses cursor transition TO this file.
+        The whole-cycle flag (is_click_sensitive) controls apply_cycle_features.
+        """
         nonlocal timeline, cycle_events, file_info_list, has_dmwm, total_pre_pause, total_transition_time, total_snap_gap_time, files_added
         
         # Load events
@@ -6089,9 +6120,10 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                     break
             
             
-            # CURSOR TRANSITION: skipped for click-sensitive folders
-            # (no coordinate changes between files - cursor stays wherever it was)
-            if not is_click_sensitive:
+            # CURSOR TRANSITION: skipped if THIS slot or the whole cycle is click-sensitive.
+            # slot_is_click_sensitive: transition TO this specific subfolder is suppressed.
+            # is_click_sensitive: whole-cycle flag (main folder name tag).
+            if not is_click_sensitive and not slot_is_click_sensitive:
                 transition_duration = rng.uniform(200.0, 400.0) * mult
                 if last_x is not None and first_x is not None and (last_x != first_x or last_y != first_y):
                     transition_path = generate_human_path(
@@ -6240,17 +6272,22 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
                 add_file_to_cycle(item, folder_num, is_dmwm, item.name)
         else:
             # Multi-subfolder: always_first/last wrap ONLY the files of their OWN folder.
+            # slot_cs: True if this specific subfolder is click-sensitive (per-slot flag).
+            _slot_cs = folder_data.get('is_click_sensitive', False)
             af = _pick_af_al(folder_data.get('always_first', []), rng)
             al = _pick_af_al(folder_data.get('always_last',  []), rng)
             if af:
                 is_dmwm = af in dmwm_file_set
-                add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}")
+                add_file_to_cycle(af, folder_num, is_dmwm, f"[ALWAYS FIRST] {af.name}",
+                                  slot_is_click_sensitive=_slot_cs)
             for item in _regular_items:
                 is_dmwm = item in dmwm_file_set
-                add_file_to_cycle(item, folder_num, is_dmwm, item.name)
+                add_file_to_cycle(item, folder_num, is_dmwm, item.name,
+                                  slot_is_click_sensitive=_slot_cs)
             if al:
                 is_dmwm = al in dmwm_file_set
-                add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}")
+                add_file_to_cycle(al, folder_num, is_dmwm, f"[ALWAYS LAST] {al.name}",
+                                  slot_is_click_sensitive=_slot_cs)
 
     # DISTRACTION: maybe insert AFTER the very last folder
     if combination:
@@ -8509,10 +8546,12 @@ def main():
                     'click+time sensitive' in _fn_lower or
                     'click time sensitive' in _fn_lower
                 )
-                folder_is_click_sensitive = _name_click_sensitive or any(
-                    fd.get('is_click_sensitive', False)
-                    for fd in subfolder_files.values()
-                )
+                # folder_is_click_sensitive = ONLY the main folder name tag.
+                # Per-subfolder click-sensitivity is handled slot-by-slot inside
+                # add_file_to_cycle (slot_is_click_sensitive). This prevents one
+                # click-sensitive subfolder (e.g. F6) from suppressing features
+                # for all other normal subfolders (F1-F5, F7-F8) in the same cycle.
+                folder_is_click_sensitive = _name_click_sensitive
                 # Distractions: Raw and click-sensitive folders never get any
                 if is_raw or folder_is_click_sensitive:
                     cycle_dist_chance = 0.0
