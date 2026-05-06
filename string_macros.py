@@ -3,7 +3,7 @@
 STRING MACROS - FEATURE LIST
 ===========================================================================
 
-  Current version: v3.19.05
+  Current version: v3.19.06
   File ratio (default 12): 2 Raw - 3 Inef - 7 Normal  (2:3:7)
   Time-sensitive ratio:    6 Raw - 0 Inef - 6 Normal  (1:1)
 
@@ -233,8 +233,9 @@ STRING MACROS - FEATURE LIST
 
 35. INTRA-FILE ZERO-GAP PROTECTION
     On load: two checks, both shift all events from the click forward.
-    Part A — MouseMove->ButtonDown gap < 15ms shifted to 20ms.
-    Prevents recording-tool artifacts causing button clamp.
+    Part A — MouseMove->ButtonDown gap < 30ms shifted to 35ms.
+    Prevents fast-cursor recordings clicking short of target tile.
+    Raised from 15→30ms (v3.19.06): 15-29ms gaps were slipping through.
     Part B — DragEnd->DragStart gap < 200ms shifted to 200ms.
     Prevents rapid DragStart re-press. Threshold raised 150→200ms v3.18.92.
     Part C (v3.19.02) — any button-event->button-down gap < 200ms shifted
@@ -393,6 +394,18 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
             was created, crashing on every run. Fixed by removing the early check and
             instead doing a folder rename on disk AFTER the manifest is written and all
             versions are done — at which point tracker is guaranteed to exist.
+- v3.19.06: Part A threshold raised 15ms → 30ms (cursor-settle fix).
+            ROOT CAUSE: Fast source recordings sometimes have the cursor
+            still moving when DragStart fires. The cursor passed through X0
+            (slightly short of target X1) and DragStart fired at X0.
+            Part A catches MM→ButtonDown gaps < 15ms and shifts to 20ms.
+            Gaps of 15-29ms slipped through: the cursor was still in transit
+            at that last MouseMove (X0) when DragStart fired.
+            FIX: raise Part A threshold 15→30ms, target 35ms.
+            Any MM→ButtonDown gap under 30ms is now shifted so there's
+            at least 35ms of stillness before the click fires — enough for
+            the macro player to register the cursor at its final position.
+            Applied to both copies. Part B/C thresholds unchanged.
 - v3.19.05: Per-subfolder click/time sensitivity.
             ROOT CAUSE: folder_is_click_sensitive was computed as
             `any(fd.get("is_click_sensitive") for fd in subfolder_files.values())`.
@@ -767,7 +780,7 @@ KNOWN ISSUES (not yet fixed): (not yet fixed):
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.05"
+VERSION = "v3.19.06"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -1900,9 +1913,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
-        # Part A: MouseMove -> click-type zero-gap
-        _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
-        _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
+        # Part A: MouseMove -> click-type gap < 30ms (v3.19.06 raised from 15ms).
+        # Fast source recordings often have the cursor still moving when
+        # DragStart fires — the last MM is at X0 (slightly short of target X1)
+        # and DragStart fires 15-29ms later, also at X0. Raising to 30ms means
+        # any click with < 30ms since the last cursor movement is shifted to
+        # 35ms after that MM, giving the macro player time to register the
+        # cursor at its settled position before the click fires.
+        _ZERO_GAP_THRESHOLD = 30    # ms - gaps below this = cursor still moving
+        _ZERO_GAP_TARGET    = 35    # ms - minimum settle time to enforce
         for _zi in range(1, len(events)):
             if (events[_zi].get('Type') in _CLICK_TYPES
                     and events[_zi - 1].get('Type') == 'MouseMove'):
@@ -4295,7 +4314,7 @@ This ensures the documentation stays accurate and users know what features exist
 import argparse, json, random, re, sys, os, math, shutil, itertools
 from pathlib import Path
 
-VERSION = "v3.19.05"
+VERSION = "v3.19.06"
 
 # ============================================================================
 # FEATURE DOCUMENTATION - ORGANIZED BY PURPOSE
@@ -6037,9 +6056,15 @@ def string_cycle(subfolder_files, combination, rng, dmwm_file_set=set(),
         #   Threshold: 200ms  |  Target separation: 200ms
         _CLICK_TYPES = {'DragStart', 'LeftDown', 'RightDown', 'Click'}
 
-        # Part A: MouseMove -> click-type zero-gap
-        _ZERO_GAP_THRESHOLD = 15    # ms - gaps below this are "simultaneous"
-        _ZERO_GAP_TARGET    = 20    # ms - minimum clean separation to enforce
+        # Part A: MouseMove -> click-type gap < 30ms (v3.19.06 raised from 15ms).
+        # Fast source recordings often have the cursor still moving when
+        # DragStart fires — the last MM is at X0 (slightly short of target X1)
+        # and DragStart fires 15-29ms later, also at X0. Raising to 30ms means
+        # any click with < 30ms since the last cursor movement is shifted to
+        # 35ms after that MM, giving the macro player time to register the
+        # cursor at its settled position before the click fires.
+        _ZERO_GAP_THRESHOLD = 30    # ms - gaps below this = cursor still moving
+        _ZERO_GAP_TARGET    = 35    # ms - minimum settle time to enforce
         for _zi in range(1, len(events)):
             if (events[_zi].get('Type') in _CLICK_TYPES
                     and events[_zi - 1].get('Type') == 'MouseMove'):
