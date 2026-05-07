@@ -146,7 +146,7 @@ on:
       target_minutes:
         description: 'Target duration per stringed file *'
         required: true
-        default: '100'
+        default: '1'
       enable_chat:
         description: 'Enable chat inserts (20% of files)'
         required: false
