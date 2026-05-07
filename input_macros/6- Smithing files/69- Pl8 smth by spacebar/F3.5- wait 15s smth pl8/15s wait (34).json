@@ -1,0 +1,218 @@
+[
+  {
+    "Type": "MouseMove",
+    "Time": 1,
+    "X": 2595,
+    "Y": 918,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 4,
+    "X": 2559,
+    "Y": 886,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 12,
+    "X": 2546,
+    "Y": 877,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 22,
+    "X": 2541,
+    "Y": 873,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "KeyUp",
+    "Time": 78,
+    "X": null,
+    "Y": null,
+    "Delta": null,
+    "KeyCode": 35
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 118,
+    "X": 2541,
+    "Y": 868,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 618,
+    "X": 2541,
+    "Y": 864,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 1696,
+    "X": 2537,
+    "Y": 864,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 1731,
+    "X": 2537,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 1736,
+    "X": 2532,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 10550,
+    "X": 2519,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 10566,
+    "X": 2514,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 10574,
+    "X": 2510,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 10582,
+    "X": 2505,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15520,
+    "X": 2509,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15528,
+    "X": 2514,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15537,
+    "X": 2518,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15544,
+    "X": 2523,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15560,
+    "X": 2527,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15602,
+    "X": 2532,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15608,
+    "X": 2536,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15618,
+    "X": 2545,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15624,
+    "X": 2550,
+    "Y": 859,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15634,
+    "X": 2559,
+    "Y": 855,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15643,
+    "X": 2563,
+    "Y": 855,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15650,
+    "X": 2568,
+    "Y": 855,
+    "Delta": null,
+    "KeyCode": null
+  },
+  {
+    "Type": "MouseMove",
+    "Time": 15658,
+    "X": 2572,
+    "Y": 855,
+    "Delta": null,
+    "KeyCode": null
+  }
+]
